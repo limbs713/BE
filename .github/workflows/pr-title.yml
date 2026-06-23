@@ -1,0 +1,17 @@
+  name: PR 제목에 Jira 키 필수
+  on:
+    pull_request:
+      types: [opened, edited, synchronize, reopened]
+  jobs:
+    check:
+      runs-on: ubuntu-latest
+      steps:
+        - name: 제목에 SCRUM 키 확인
+          env:
+            TITLE: ${{ github.event.pull_request.title }}
+          run: |
+            printf '제목: %s\n' "$TITLE"
+            printf '%s' "$TITLE" | grep -qE 'SCRUM-[0-9]+' || {
+              echo "::error::PR 제목에 Jira 이슈 키(SCRUM-숫자)가 없습니다."
+              exit 1
+            }
