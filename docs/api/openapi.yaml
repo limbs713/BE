@@ -1,0 +1,172 @@
+openapi: 3.1.0
+info:
+  title: BE API
+  description: 광고 문구 위험도 검토(RAG) 백엔드 API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+    description: 로컬 개발 서버
+tags:
+  - name: review
+    description: 광고 문구 위험도 검토(RAG)
+paths:
+  /review:
+    post:
+      tags:
+        - review
+      summary: 광고 문구 위험도 검토
+      description: >-
+        광고 문구를 받아 RAG(유사 민감 주제 검색 + 전례 수집 + LLM 판정)로
+        사회적 논란 위험도를 검토한 결과를 반환합니다.
+      operationId: reviewAd
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
+            example:
+              text: 8월 15일 광복절 기념 한정 세일
+      responses:
+        '200':
+          description: 검토 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResult'
+        '400':
+          description: 잘못된 요청 본문이거나 text 필드가 비어 있음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                emptyText:
+                  value:
+                    error: text 필드는 비어 있을 수 없습니다
+                badBody:
+                  value:
+                    error: 잘못된 요청 본문입니다
+        '500':
+          description: 내부 처리 실패(임베딩/검색/판정 등)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    ReviewRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: 검토할 광고 문구
+          minLength: 1
+    ReviewResult:
+      type: object
+      required:
+        - input
+        - verdict
+        - related_topics
+        - precedents
+      properties:
+        input:
+          type: string
+          description: 검토 대상 원문
+        verdict:
+          $ref: '#/components/schemas/Verdict'
+        related_topics:
+          type: array
+          description: 융합 검색으로 찾은 관련 민감 주제(top-k)
+          items:
+            $ref: '#/components/schemas/Topic'
+        precedents:
+          type: array
+          description: 관련 주제에 연결된 실제 논란 전례
+          items:
+            $ref: '#/components/schemas/Precedent'
+    Verdict:
+      type: object
+      description: LLM이 내린 위험도 판정
+      required:
+        - risky
+        - risk_level
+        - reasons
+        - advice
+      properties:
+        risky:
+          type: boolean
+          description: 위험 여부
+        risk_level:
+          type: string
+          description: 위험 등급
+          enum:
+            - none
+            - low
+            - medium
+            - high
+        reasons:
+          type: array
+          description: 판정 근거(한국어)
+          items:
+            type: string
+        advice:
+          type: string
+          description: 개선 조언(한국어)
+    Topic:
+      type: object
+      description: 검색된 민감 주제 마스터 한 건
+      required:
+        - id
+        - title
+        - category
+        - event_date
+        - description
+        - similarity
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        event_date:
+          type: string
+          description: 사건 일자(MM-DD 등)
+        description:
+          type: string
+        similarity:
+          type: number
+          format: double
+          description: pgvector 코사인 유사도
+    Precedent:
+      type: object
+      description: 민감 주제에 연결된 실제 논란 사례
+      required:
+        - issue_id
+        - region
+        - title
+        - description
+        - topic_id
+      properties:
+        issue_id:
+          type: string
+        region:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        topic_id:
+          type: string
+          description: 연결된 주제 ID
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: 오류 메시지
