@@ -1,0 +1,24 @@
+# EC2(ec2-user 홈 디렉터리)에 두고 배포 시 사용하는 compose 파일입니다.
+# 이미지는 CI(GitHub Actions)가 ECR에 푸시한 것을 pull 해서 실행합니다.
+#
+# 필요한 값은 같은 디렉터리의 .env 파일에서 읽습니다.
+# 이 .env 는 배포 시 deploy.yml(GitHub Actions)이 GitHub Secret 값으로 자동 생성합니다:
+#   ECR_REGISTRY   - 예: 299139629755.dkr.ecr.ap-northeast-2.amazonaws.com
+#   DATABASE_URL   - 예: postgres://postgres:seasonal@10.0.2.55:5432/postgres
+#   OPENAI_API_KEY - OpenAI API 키
+
+services:
+  app:
+    image: ${ECR_REGISTRY}/seasonal-fish/app:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
