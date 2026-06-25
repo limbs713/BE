@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,11 +30,22 @@ func Review(svc *rag.Service) gin.HandlerFunc {
 			return
 		}
 
+		start := time.Now()
 		result, err := svc.Review(c.Request.Context(), req.Text)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		latencyMs := int(time.Since(start).Milliseconds())
+
+		// 검토 결과를 히스토리에 저장합니다(베스트에포트: 실패해도 응답은 막지 않음).
+		// 응답 후 요청 컨텍스트가 취소될 수 있어 별도의 짧은 타임아웃 컨텍스트를 씁니다.
+		saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := svc.SaveHistory(saveCtx, result, "text", latencyMs); err != nil {
+			log.Printf("검토 히스토리 저장 실패: %v", err)
+		}
+
 		c.JSON(http.StatusOK, result)
 	}
 }

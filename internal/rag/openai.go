@@ -73,7 +73,16 @@ func (c *openAIClient) EmbedBatch(ctx context.Context, texts []string) ([][]floa
 	}
 	vecs := make([][]float32, len(texts))
 	for _, d := range out.Data {
+		if d.Index < 0 || d.Index >= len(texts) {
+			return nil, fmt.Errorf("openai: embedding index 범위 초과 (%d, n=%d)", d.Index, len(texts))
+		}
 		vecs[d.Index] = d.Embedding // index 순서 보정
+	}
+	// 중복/누락 index 로 인해 비어 있는 슬롯이 없는지 확인(부분 nil 임베딩 방지)
+	for i, v := range vecs {
+		if len(v) == 0 {
+			return nil, fmt.Errorf("openai: embedding 누락 (index %d)", i)
+		}
 	}
 	return vecs, nil
 }
