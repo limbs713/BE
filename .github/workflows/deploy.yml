@@ -13,18 +13,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      # 1) AWS 자격증명 설정 (ecr-login 은 자격증명을 직접 받지 않으므로 선행 필요)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-2
 
+      # 2) ECR 로그인 (러너에서 push 하기 위함)
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Build and Push
         run: |
-          docker build -t ${{ secrets.ECR_REGISTRY }}/app:latest .
-          docker push ${{ secrets.ECR_REGISTRY }}/app:latest
+          docker build -t ${{ secrets.ECR_REGISTRY }}/seasonal-fish/app:latest .
+          docker push ${{ secrets.ECR_REGISTRY }}/seasonal-fish/app:latest
 
+      # 3) docker-compose.yml 을 레포에서 EC2 로 복사 (레포가 단일 출처)
+      - name: Copy docker-compose.yml to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          source: docker-compose.yml
+          target: /home/ec2-user/
+
+      # 4) EC2 접속 -> .env 생성 -> ECR 로그인 -> 최신 이미지 pull & 재기동
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1
         with:
@@ -32,5 +48,15 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
+            cat > /home/ec2-user/.env <<'EOF'
+            ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            EOF
+            chmod 600 /home/ec2-user/.env
+            cd /home/ec2-user
+            aws ecr get-login-password --region ap-northeast-2 \
+              | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
             docker-compose pull
             docker-compose up -d
+            docker image prune -f
