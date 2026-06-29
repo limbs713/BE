@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/limbs713/BE/internal/image"
 	"github.com/limbs713/BE/internal/rag"
 	"github.com/limbs713/BE/internal/router"
 )
@@ -15,7 +16,13 @@ func main() {
 	}
 	defer ragSvc.Close()
 
-	r := router.New(ragSvc)
+	imageSvc, err := image.NewService(context.Background())
+	if err != nil {
+		log.Fatalf("image service init failed: %v", err)
+	}
+	defer imageSvc.Close()
+
+	r := router.New(ragSvc, imageSvc)
 
 	const addr = ":8080"
 	log.Printf("server starting on %s", addr)
