@@ -2,14 +2,38 @@ openapi: 3.1.0
 info:
   title: BE API
   description: 광고 문구 위험도 검토(RAG) 백엔드 API
-  version: 0.1.0
+  version: 0.2.0
 servers:
   - url: http://localhost:8080
     description: 로컬 개발 서버
 tags:
+  - name: health
+    description: 헬스 체크
   - name: review
     description: 광고 문구 위험도 검토(RAG)
+  - name: history
+    description: 검토 히스토리 조회
+  - name: generate
+    description: 트렌드어 기반 광고 문구 생성
+  - name: knowledge
+    description: 지식베이스 동기화/상태
 paths:
+  /health:
+    get:
+      tags:
+        - health
+      summary: 헬스 체크
+      description: 서버 생존 여부를 반환합니다. 로드밸런서/오케스트레이터의 헬스 체크용입니다.
+      operationId: health
+      responses:
+        '200':
+          description: 정상
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
   /review:
     post:
       tags:
@@ -17,7 +41,8 @@ paths:
       summary: 광고 문구 위험도 검토
       description: >-
         광고 문구를 받아 RAG(유사 민감 주제 검색 + 전례 수집 + LLM 판정)로
-        사회적 논란 위험도를 검토한 결과를 반환합니다.
+        사회적 논란 위험도를 검토한 결과를 반환합니다. 검토 결과는 히스토리에
+        베스트에포트로 저장됩니다.
       operationId: reviewAd
       requestBody:
         required: true
@@ -53,8 +78,221 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /history:
+    get:
+      tags:
+        - history
+      summary: 검토 히스토리 목록
+      description: created_at 내림차순으로 검토 히스토리를 페이징 조회합니다.
+      operationId: listHistory
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: 페이지 크기(기본 20). 0 이하 또는 비정수면 기본값 사용.
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          description: 건너뛸 행 수(기본 0). 음수 또는 비정수면 기본값 사용.
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: 히스토리 목록과 전체 건수
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryListResponse'
+        '500':
+          description: 내부 처리 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /history/stats:
+    get:
+      tags:
+        - history
+      summary: 히스토리 요약 카드
+      description: 히스토리 화면 상단 요약 카드(평균 응답/총 검토/위험 검출)를 반환합니다.
+      operationId: historyStats
+      responses:
+        '200':
+          description: 요약 카드 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryStatsResponse'
+        '500':
+          description: 내부 처리 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /history/{id}:
+    get:
+      tags:
+        - history
+      summary: 검토 히스토리 상세
+      description: id 로 저장된 검토 결과 전체(ReviewResult)를 반환합니다.
+      operationId: historyDetail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 검토 결과 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 검토 결과 전체
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResult'
+        '404':
+          description: 해당 히스토리를 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: 해당 검토 히스토리를 찾을 수 없습니다
+  /trends:
+    get:
+      tags:
+        - generate
+      summary: 트렌드어 목록
+      description: sensitive_events 의 trigger_expressions 를 펼쳐 활성도 상위 N개의 트렌드어를 반환합니다.
+      operationId: trends
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: 반환할 트렌드어 개수(기본 12). 0 이하 또는 비정수면 기본값 사용.
+          schema:
+            type: integer
+            default: 12
+            minimum: 1
+      responses:
+        '200':
+          description: 트렌드어 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrendsResponse'
+        '500':
+          description: 내부 처리 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /generate:
+    post:
+      tags:
+        - generate
+      summary: 광고 문구 생성
+      description: >-
+        제품/톤/트렌드어로 광고 헤드라인 후보를 생성하고, 각 후보를 자동
+        리스크 검토한 결과(점수/안전 라벨/노트/검토 ID)를 함께 반환합니다.
+      operationId: generate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+            example:
+              product: 여름 한정 아이스크림
+              tone: 경쾌하고 발랄하게
+              trends:
+                - '#여름'
+                - '#한정'
+      responses:
+        '200':
+          description: 생성된 후보 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          description: 잘못된 요청 본문이거나 product 필드가 비어 있음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                emptyProduct:
+                  value:
+                    error: product 필드는 비어 있을 수 없습니다
+                badBody:
+                  value:
+                    error: 잘못된 요청 본문입니다
+        '500':
+          description: 내부 처리 실패(생성/검토 등)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /knowledge/sync:
+    post:
+      tags:
+        - knowledge
+      summary: 지식베이스 동기화
+      description: >-
+        embedding 이 비어 있는 sensitive_events 행을 임베딩해 채우고,
+        last_synced_at 을 갱신합니다.
+      operationId: knowledgeSync
+      responses:
+        '200':
+          description: 동기화 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+        '500':
+          description: 내부 처리 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /knowledge/status:
+    get:
+      tags:
+        - knowledge
+      summary: 지식베이스 상태
+      description: 마지막 동기화 시각과 이벤트/사례 건수를 반환합니다.
+      operationId: knowledgeStatus
+      responses:
+        '200':
+          description: 지식베이스 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeStatus'
+        '500':
+          description: 내부 처리 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: 서버 상태
+          example: ok
     ReviewRequest:
       type: object
       required:
@@ -67,16 +305,29 @@ components:
     ReviewResult:
       type: object
       required:
+        - id
         - input
         - verdict
+        - highlights
+        - rewrite
         - related_topics
         - precedents
       properties:
+        id:
+          type: string
+          description: 검토 결과 ID(히스토리 키)
         input:
           type: string
           description: 검토 대상 원문
         verdict:
           $ref: '#/components/schemas/Verdict'
+        highlights:
+          type: array
+          description: 입력 문구 내 위험 표현 인라인 하이라이트 목록
+          items:
+            $ref: '#/components/schemas/Highlight'
+        rewrite:
+          $ref: '#/components/schemas/Rewrite'
         related_topics:
           type: array
           description: 융합 검색으로 찾은 관련 민감 주제(top-k)
@@ -93,20 +344,26 @@ components:
       required:
         - risky
         - risk_level
+        - score
         - reasons
         - advice
       properties:
         risky:
           type: boolean
-          description: 위험 여부
+          description: 위험 여부(score > 0)
         risk_level:
           type: string
-          description: 위험 등급
+          description: 위험 등급(score 로부터 보정)
           enum:
             - none
             - low
             - medium
             - high
+        score:
+          type: integer
+          description: 위험도 게이지(0~100)
+          minimum: 0
+          maximum: 100
         reasons:
           type: array
           description: 판정 근거(한국어)
@@ -115,6 +372,68 @@ components:
         advice:
           type: string
           description: 개선 조언(한국어)
+    Highlight:
+      type: object
+      description: 입력 문구 안의 위험 표현 한 건(인라인 하이라이트)
+      required:
+        - phrase
+        - severity
+        - reason
+        - confidence
+      properties:
+        phrase:
+          type: string
+          description: 입력 문구에서 그대로 발췌한 위험 표현
+        start:
+          type: integer
+          description: input 내 rune(문자) 시작 오프셋. 매칭 실패 시 생략
+        end:
+          type: integer
+          description: input 내 rune(문자) 끝 오프셋. 매칭 실패 시 생략
+        severity:
+          type: string
+          description: 심각도(UI 색/밑줄)
+          enum:
+            - high
+            - needs_review
+            - low
+        tag:
+          type: string
+          description: '분류 태그(예: 역사·인권, 신조어)'
+        category:
+          type: string
+          description: 민감 주제 카테고리
+        date:
+          type: string
+          description: 관련 기념일/사건일(MM-DD 등)
+        reason:
+          type: string
+          description: 왜 문제인지에 대한 한국어 설명
+        basis:
+          type: string
+          description: 근거가 된 관련 주제/전례 출처
+        confidence:
+          type: number
+          format: double
+          description: 신뢰도(0~1)
+          minimum: 0
+          maximum: 1
+        alt:
+          type: string
+          description: 구절 단위 대체어
+    Rewrite:
+      type: object
+      description: 안전 대체 문구 전체(Before→After)
+      required:
+        - before
+        - after
+      properties:
+        before:
+          type: string
+          description: 원문(입력 문구)
+        after:
+          type: string
+          description: 의미를 살려 안전하게 고쳐 쓴 전체 문구
     Topic:
       type: object
       description: 검색된 민감 주제 마스터 한 건
@@ -162,6 +481,202 @@ components:
         topic_id:
           type: string
           description: 연결된 주제 ID
+    HistoryItem:
+      type: object
+      description: 검토 히스토리 목록의 한 행(UI 바인딩용 축약 뷰)
+      required:
+        - id
+        - date
+        - title
+        - snippet
+        - src
+        - status
+        - score
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          description: created_at 의 RFC3339 문자열
+          format: date-time
+        title:
+          type: string
+          description: input 앞 40자 축약
+        snippet:
+          type: string
+          description: input 앞 80자 축약
+        src:
+          type: string
+          description: 검토 출처(예 text | generate)
+        status:
+          type: string
+          description: 상태(예 reviewed | needs_review)
+        score:
+          type: integer
+          description: 위험도 점수(0~100)
+          minimum: 0
+          maximum: 100
+    HistoryListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryItem'
+        total:
+          type: integer
+          description: 전체 히스토리 건수
+    HistoryStatCard:
+      type: object
+      description: 히스토리 화면 상단 요약 카드 한 장
+      required:
+        - label
+        - value
+        - unit
+        - sub
+      properties:
+        label:
+          type: string
+          description: 카드 제목(예 평균 응답)
+        value:
+          type: string
+          description: 표시 값
+        unit:
+          type: string
+          description: 단위(예 초, 건, %)
+        sub:
+          type: string
+          description: 보조 설명
+    HistoryStatsResponse:
+      type: object
+      required:
+        - cards
+      properties:
+        cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryStatCard'
+    Trend:
+      type: object
+      description: trigger_expressions 를 펼쳐 만든 트렌드어 한 건
+      required:
+        - tag
+        - category
+        - up
+      properties:
+        tag:
+          type: string
+          description: "'#'을 붙인 표현(예 #광복절)"
+        category:
+          type: string
+          description: 해당 표현이 속한 카테고리
+        up:
+          type: integer
+          description: 활성도(등장 빈도 기반 의사 점수)
+    TrendsResponse:
+      type: object
+      required:
+        - trends
+      properties:
+        trends:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trend'
+    GenerateRequest:
+      type: object
+      required:
+        - product
+      properties:
+        product:
+          type: string
+          description: 제품/캠페인 정보
+          minLength: 1
+        tone:
+          type: string
+          description: 원하는 톤(선택)
+        trends:
+          type: array
+          description: 활용할 트렌드어(선택)
+          items:
+            type: string
+    GenerateCandidate:
+      type: object
+      description: 생성된 문구 한 건과 자동 검토 결과
+      required:
+        - text
+        - score
+        - safety_label
+        - note
+      properties:
+        text:
+          type: string
+          description: 생성된 광고 문구
+        score:
+          type: integer
+          description: 자동 검토 위험도 점수(0~100)
+          minimum: 0
+          maximum: 100
+        safety_label:
+          type: string
+          description: 점수 기반 안전 라벨(검토 실패 시 검토실패)
+          enum:
+            - 안전
+            - 주의
+            - 위험
+            - 검토실패
+        note:
+          type: string
+          description: 조언 또는 첫 사유(없으면 기본 문구)
+        review_id:
+          type: string
+          description: 자동 검토 결과 ID(히스토리 키). 검토 실패 시 생략됩니다.
+    GenerateResponse:
+      type: object
+      required:
+        - candidates
+      properties:
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenerateCandidate'
+    SyncResult:
+      type: object
+      description: 지식베이스 동기화 결과 요약
+      required:
+        - synced
+        - total_events
+        - last_synced_at
+      properties:
+        synced:
+          type: integer
+          description: 이번에 임베딩을 채운 행 수
+        total_events:
+          type: integer
+          description: sensitive_events 전체 건수
+        last_synced_at:
+          type: string
+          description: 마지막 동기화 시각(RFC3339)
+          format: date-time
+    KnowledgeStatus:
+      type: object
+      description: 현재 지식베이스 상태
+      required:
+        - last_synced_at
+        - total_events
+        - total_issues
+      properties:
+        last_synced_at:
+          type: string
+          description: 마지막 동기화 시각(RFC3339). 동기화 이력이 없으면 빈 문자열
+        total_events:
+          type: integer
+          description: sensitive_events 전체 건수
+        total_issues:
+          type: integer
+          description: sensitive_issues 전체 건수
     ErrorResponse:
       type: object
       required:
