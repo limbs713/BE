@@ -3,10 +3,9 @@ package rag
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Topic 은 sensitive_events(민감 주제 마스터)에서 검색된 한 건입니다.
@@ -25,18 +24,37 @@ type topicData struct {
 	triggers []string
 }
 
-// Precedent 은 sensitive_issues(실제 논란 사례)에서 가져온 전례입니다.
-type Precedent struct {
-	IssueID     string `json:"issue_id"`
-	Region      string `json:"region"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	TopicID     string `json:"topic_id"` // 어떤 주제에 연결된 사례인지
+// RelatedItem 은 임베딩 테이블에서 벡터 유사도로 검색된 한 건입니다.
+// (sensitive_issues / slang_terms / mim_terms 공용 결과 형태)
+type RelatedItem struct {
+	Source     string  `json:"source"` // 출처 테이블
+	ID         string  `json:"id"`
+	Title      string  `json:"title"`
+	Category   string  `json:"category,omitempty"`
+	Snippet    string  `json:"snippet,omitempty"`
+	Similarity float64 `json:"similarity"`
 }
+
+// searchSpec 은 벡터 검색 대상 테이블의 컬럼 매핑입니다.
+// 컬럼명·식은 모두 아래 상수에서만 오므로 SQL 조합은 안전합니다.
+type searchSpec struct {
+	source      string // 결과 Source 라벨(= 테이블명)
+	table       string
+	idCol       string
+	titleExpr   string
+	catExpr     string
+	snippetExpr string
+}
+
+var (
+	specIssues = searchSpec{"sensitive_issues", "sensitive_issues", "issue_id", "title", "COALESCE(category,'')", "COALESCE(NULLIF(new_description,''), description, '')"}
+	specSlang  = searchSpec{"slang_terms", "slang_terms", "id", "expression", "COALESCE(nuance,'')", "COALESCE(meaning,'')"}
+	specMim    = searchSpec{"mim_terms", "mim_terms", "id", "COALESCE(word,'')", "''", "COALESCE(definition,'')"}
+)
 
 // store 는 DB(pgvector)에서 검색·조회를 담당합니다.
 type store struct {
-	pool *pgxpool.Pool
+	pool pgxPool
 }
 
 // searchVector 는 pgvector 코사인 거리로 주제를 정렬해 상위 limit개 후보를 반환합니다.
@@ -70,32 +88,30 @@ func (s *store) searchVector(ctx context.Context, vec []float32, limit int) ([]t
 	return out, rows.Err()
 }
 
-// precedentsFor 는 주어진 주제 ID들에 FK로 연결된 실제 사례를 모읍니다.
-// (sensitive_issues.event_id -> sensitive_events.id)
-func (s *store) precedentsFor(ctx context.Context, topicIDs []string) ([]Precedent, error) {
-	if len(topicIDs) == 0 {
-		return nil, nil
-	}
-	const q = `
-		SELECT issue_id, region, title, description, event_id
-		FROM sensitive_issues
-		WHERE event_id = ANY($1)
-		ORDER BY issue_id`
-	rows, err := s.pool.Query(ctx, q, topicIDs)
+// searchSimilar 는 spec 테이블에서 pgvector 코사인 거리로 상위 limit개를 검색합니다.
+// (embedding 컬럼 + HNSW 인덱스 사용. 모든 임베딩 테이블에 공통 적용.)
+func (s *store) searchSimilar(ctx context.Context, spec searchSpec, vec []float32, limit int) ([]RelatedItem, error) {
+	q := fmt.Sprintf(`
+		SELECT %s::text, %s, %s, %s, 1 - (embedding <=> $1::vector) AS similarity
+		FROM %s
+		WHERE embedding IS NOT NULL
+		ORDER BY embedding <=> $1::vector
+		LIMIT $2`, spec.idCol, spec.titleExpr, spec.catExpr, spec.snippetExpr, spec.table)
+	rows, err := s.pool.Query(ctx, q, vectorLiteral(vec), limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var ps []Precedent
+	var out []RelatedItem
 	for rows.Next() {
-		var p Precedent
-		if err := rows.Scan(&p.IssueID, &p.Region, &p.Title, &p.Description, &p.TopicID); err != nil {
+		it := RelatedItem{Source: spec.source}
+		if err := rows.Scan(&it.ID, &it.Title, &it.Category, &it.Snippet, &it.Similarity); err != nil {
 			return nil, err
 		}
-		ps = append(ps, p)
+		out = append(out, it)
 	}
-	return ps, rows.Err()
+	return out, rows.Err()
 }
 
 // vectorLiteral 는 []float32 를 pgvector 텍스트 리터럴("[0.1,0.2,...]")로 만듭니다.

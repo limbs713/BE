@@ -311,7 +311,9 @@ components:
         - highlights
         - rewrite
         - related_topics
-        - precedents
+        - related_issues
+        - related_slang
+        - related_trends
       properties:
         id:
           type: string
@@ -330,14 +332,24 @@ components:
           $ref: '#/components/schemas/Rewrite'
         related_topics:
           type: array
-          description: 융합 검색으로 찾은 관련 민감 주제(top-k)
+          description: sensitive_events 융합 검색(벡터+키워드+날짜)으로 찾은 관련 민감 주제(top-k)
           items:
             $ref: '#/components/schemas/Topic'
-        precedents:
+        related_issues:
           type: array
-          description: 관련 주제에 연결된 실제 논란 전례
+          description: sensitive_issues 벡터 검색으로 찾은 유사 논란 사례
           items:
-            $ref: '#/components/schemas/Precedent'
+            $ref: '#/components/schemas/RelatedItem'
+        related_slang:
+          type: array
+          description: slang_terms 벡터 검색으로 찾은 관련 신조어/은어
+          items:
+            $ref: '#/components/schemas/RelatedItem'
+        related_trends:
+          type: array
+          description: mim_terms 벡터 검색으로 찾은 관련 유행어/밈
+          items:
+            $ref: '#/components/schemas/RelatedItem'
     Verdict:
       type: object
       description: LLM이 내린 위험도 판정
@@ -460,27 +472,33 @@ components:
           type: number
           format: double
           description: pgvector 코사인 유사도
-    Precedent:
+    RelatedItem:
       type: object
-      description: 민감 주제에 연결된 실제 논란 사례
+      description: 임베딩 테이블(issues/slang/mim)에서 벡터 유사도로 검색된 한 건
       required:
-        - issue_id
-        - region
+        - source
+        - id
         - title
-        - description
-        - topic_id
+        - similarity
       properties:
-        issue_id:
+        source:
           type: string
-        region:
+          description: '출처 테이블(sensitive_issues | slang_terms | mim_terms)'
+        id:
           type: string
         title:
           type: string
-        description:
+          description: 표제(이슈 제목 / 신조어 표현 / 유행어)
+        category:
           type: string
-        topic_id:
+          description: 분류(있는 경우)
+        snippet:
           type: string
-          description: 연결된 주제 ID
+          description: 설명/의미 요약
+        similarity:
+          type: number
+          format: double
+          description: pgvector 코사인 유사도
     HistoryItem:
       type: object
       description: 검토 히스토리 목록의 한 행(UI 바인딩용 축약 뷰)
@@ -644,39 +662,55 @@ components:
             $ref: '#/components/schemas/GenerateCandidate'
     SyncResult:
       type: object
-      description: 지식베이스 동기화 결과 요약
+      description: 지식베이스 동기화 결과 요약. 임베딩 대상 전 테이블의 NULL 행만 채운다.
       required:
         - synced
-        - total_events
+        - by_table
         - last_synced_at
       properties:
         synced:
           type: integer
-          description: 이번에 임베딩을 채운 행 수
-        total_events:
-          type: integer
-          description: sensitive_events 전체 건수
+          description: 이번에 임베딩을 채운 전체 행 수(전 테이블 합계)
+        by_table:
+          type: object
+          description: 테이블별 신규 임베딩 건수
+          additionalProperties:
+            type: integer
+          example:
+            sensitive_events: 0
+            sensitive_issues: 0
+            slang_terms: 0
+            mim_terms: 5
         last_synced_at:
           type: string
           description: 마지막 동기화 시각(RFC3339)
           format: date-time
     KnowledgeStatus:
       type: object
-      description: 현재 지식베이스 상태
+      description: 현재 지식베이스 상태(임베딩 테이블별 적재 현황)
       required:
         - last_synced_at
-        - total_events
-        - total_issues
+        - tables
       properties:
         last_synced_at:
           type: string
           description: 마지막 동기화 시각(RFC3339). 동기화 이력이 없으면 빈 문자열
-        total_events:
-          type: integer
-          description: sensitive_events 전체 건수
-        total_issues:
-          type: integer
-          description: sensitive_issues 전체 건수
+        tables:
+          type: object
+          description: 임베딩 테이블별 전체/임베딩완료 건수
+          additionalProperties:
+            type: object
+            required:
+              - total
+              - embedded
+            properties:
+              total:
+                type: integer
+              embedded:
+                type: integer
+          example:
+            sensitive_events: { total: 96, embedded: 96 }
+            mim_terms: { total: 688, embedded: 0 }
     ErrorResponse:
       type: object
       required:

@@ -15,6 +15,8 @@ const (
 	// pgvector로 가져올 후보 풀 크기. 전체 주제 수(현재 96)보다 크게 잡아
 	// 융합 랭킹이 누락 없이 동작하도록 함.
 	poolSize = 200
+	// relatedK 는 보조 임베딩 테이블(issues/slang/mim)에서 가져올 유사 항목 수.
+	relatedK = 5
 )
 
 // fuseRank 는 pgvector가 벡터순으로 준 후보(cands)에 키워드(RRF)와 날짜 부스트를

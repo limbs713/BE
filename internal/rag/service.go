@@ -15,13 +15,14 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/sync/errgroup"
 )
 
 // Service 는 RAG 검토 의존성(DB 풀, OpenAI)을 묶습니다.
 type Service struct {
-	pool  *pgxpool.Pool
+	pool  pgxPool
 	store *store
-	ai    *openAIClient
+	ai    aiClient
 }
 
 // NewService 는 환경변수에서 설정을 읽어 Service를 만듭니다.
@@ -93,14 +94,17 @@ type Rewrite struct {
 }
 
 // ReviewResult 는 /review 응답 전체입니다.
+// 4개 임베딩 테이블을 각각 벡터 검색해 유사 항목을 함께 반환합니다.
 type ReviewResult struct {
-	ID            string      `json:"id"`
-	Input         string      `json:"input"`
-	Verdict       Verdict     `json:"verdict"`
-	Highlights    []Highlight `json:"highlights"`
-	Rewrite       Rewrite     `json:"rewrite"`
-	RelatedTopics []Topic     `json:"related_topics"`
-	Precedents    []Precedent `json:"precedents"`
+	ID            string        `json:"id"`
+	Input         string        `json:"input"`
+	Verdict       Verdict       `json:"verdict"`
+	Highlights    []Highlight   `json:"highlights"`
+	Rewrite       Rewrite       `json:"rewrite"`
+	RelatedTopics []Topic       `json:"related_topics"` // sensitive_events (벡터+키워드+날짜 융합)
+	RelatedIssues []RelatedItem `json:"related_issues"` // sensitive_issues (벡터)
+	RelatedSlang  []RelatedItem `json:"related_slang"`  // slang_terms (벡터)
+	RelatedTrends []RelatedItem `json:"related_trends"` // mim_terms (벡터)
 }
 
 // Review 는 입력 문구를 검토해 위험도 판정 결과를 반환합니다(전략 S6).
@@ -112,25 +116,52 @@ func (s *Service) Review(ctx context.Context, input string) (*ReviewResult, erro
 		return nil, fmt.Errorf("임베딩 실패: %w", err)
 	}
 
-	// 2) pgvector 후보 풀 -> 키워드/날짜 융합 top-8 (키워드/날짜는 원문 기준)
-	cands, err := s.store.searchVector(ctx, vec, poolSize)
-	if err != nil {
-		return nil, fmt.Errorf("벡터 검색 실패: %w", err)
+	// 2) 4개 임베딩 테이블을 병렬로 벡터 검색한다.
+	//    - sensitive_events 는 벡터 후보 풀 -> 키워드/날짜 융합(fuseRank)으로 정밀화
+	//    - 나머지(issues/slang/mim)는 임베딩 코사인 top-K 직접 검색
+	var (
+		topics                []Topic
+		issues, slang, trends []RelatedItem
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		cands, err := s.store.searchVector(gctx, vec, poolSize)
+		if err != nil {
+			return fmt.Errorf("민감주제 검색 실패: %w", err)
+		}
+		topics = fuseRank(cands, input, retrieveK)
+		return nil
+	})
+	g.Go(func() error {
+		r, err := s.store.searchSimilar(gctx, specIssues, vec, relatedK)
+		if err != nil {
+			return fmt.Errorf("전례 검색 실패: %w", err)
+		}
+		issues = r
+		return nil
+	})
+	g.Go(func() error {
+		r, err := s.store.searchSimilar(gctx, specSlang, vec, relatedK)
+		if err != nil {
+			return fmt.Errorf("신조어 검색 실패: %w", err)
+		}
+		slang = r
+		return nil
+	})
+	g.Go(func() error {
+		r, err := s.store.searchSimilar(gctx, specMim, vec, relatedK)
+		if err != nil {
+			return fmt.Errorf("유행어 검색 실패: %w", err)
+		}
+		trends = r
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
-	topics := fuseRank(cands, input, retrieveK)
 
-	// 3) 연결된 전례 수집
-	ids := make([]string, len(topics))
-	for i, t := range topics {
-		ids[i] = t.ID
-	}
-	precedents, err := s.store.precedentsFor(ctx, ids)
-	if err != nil {
-		return nil, fmt.Errorf("전례 조회 실패: %w", err)
-	}
-
-	// 4) LLM 판정 (verdict + 위험 표현 하이라이트 + 안전 대체 문구)
-	verdict, highlights, rewrite, err := s.judge(ctx, input, topics, precedents)
+	// 3) LLM 판정 (verdict + 위험 표현 하이라이트 + 안전 대체 문구)
+	verdict, highlights, rewrite, err := s.judge(ctx, input, topics, issues, slang, trends)
 	if err != nil {
 		return nil, fmt.Errorf("판정 실패: %w", err)
 	}
@@ -163,8 +194,14 @@ func (s *Service) Review(ctx context.Context, input string) (*ReviewResult, erro
 	if topics == nil {
 		topics = []Topic{}
 	}
-	if precedents == nil {
-		precedents = []Precedent{}
+	if issues == nil {
+		issues = []RelatedItem{}
+	}
+	if slang == nil {
+		slang = []RelatedItem{}
+	}
+	if trends == nil {
+		trends = []RelatedItem{}
 	}
 	if highlights == nil {
 		highlights = []Highlight{}
@@ -177,15 +214,17 @@ func (s *Service) Review(ctx context.Context, input string) (*ReviewResult, erro
 		Highlights:    highlights,
 		Rewrite:       rewrite,
 		RelatedTopics: topics,
-		Precedents:    precedents,
+		RelatedIssues: issues,
+		RelatedSlang:  slang,
+		RelatedTrends: trends,
 	}, nil
 }
 
 const judgeSystem = `너는 한국 시장의 광고 카피 위험도 검수자다.
 주어진 광고 문구가 역사적 비극, 재난, 차별, 젠더 갈등, 종교 등 민감한 주제를
 가볍게 소비하거나 연상시켜 사회적 논란을 일으킬 위험이 있는지 판정한다.
-참고로 제공되는 '관련 민감 주제'와 '실제 논란 전례'를 근거로 삼되,
-유사도가 낮으면 무리하게 위험으로 몰지 말고 차분히 판단한다.
+참고로 제공되는 '관련 민감 주제', '실제 논란 전례', '관련 신조어/은어', '관련 유행어/밈'을
+근거로 삼되, 유사도가 낮으면 무리하게 위험으로 몰지 말고 차분히 판단한다.
 
 반드시 아래 JSON 스키마로만 답한다:
 {
@@ -232,7 +271,7 @@ type judgeOutput struct {
 	} `json:"rewrite"`
 }
 
-func (s *Service) judge(ctx context.Context, input string, topics []Topic, precedents []Precedent) (Verdict, []Highlight, Rewrite, error) {
+func (s *Service) judge(ctx context.Context, input string, topics []Topic, issues, slang, trends []RelatedItem) (Verdict, []Highlight, Rewrite, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## 검수 대상 광고 문구\n%s\n\n", input)
 
@@ -244,13 +283,19 @@ func (s *Service) judge(ctx context.Context, input string, topics []Topic, prece
 		fmt.Fprintf(&b, "- [%s, 유사도 %.3f] %s: %s\n", t.Category, t.Similarity, t.Title, t.Description)
 	}
 
-	b.WriteString("\n## 실제 논란 전례 (위 주제에 연결된 사례)\n")
-	if len(precedents) == 0 {
-		b.WriteString("(연결된 전례 없음)\n")
+	// issues/slang/trends 는 RelatedItem 공통 형태라 한 헬퍼로 출력한다.
+	writeItems := func(header, empty string, items []RelatedItem) {
+		fmt.Fprintf(&b, "\n## %s\n", header)
+		if len(items) == 0 {
+			b.WriteString(empty + "\n")
+		}
+		for _, it := range items {
+			fmt.Fprintf(&b, "- [유사도 %.3f] %s: %s\n", it.Similarity, it.Title, it.Snippet)
+		}
 	}
-	for _, p := range precedents {
-		fmt.Fprintf(&b, "- [%s] %s: %s\n", p.Region, p.Title, p.Description)
-	}
+	writeItems("실제 논란 전례 (유사 사례)", "(유사 전례 없음)", issues)
+	writeItems("관련 신조어/은어", "(관련 신조어 없음)", slang)
+	writeItems("관련 유행어/밈", "(관련 유행어 없음)", trends)
 
 	raw, err := s.ai.Judge(ctx, judgeSystem, b.String())
 	if err != nil {
