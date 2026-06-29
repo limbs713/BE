@@ -11,6 +11,8 @@ tags:
     description: 헬스 체크
   - name: review
     description: 광고 문구 위험도 검토(RAG)
+  - name: image
+    description: OCR 대상 이미지 업로드
   - name: history
     description: 검토 히스토리 조회
   - name: generate
@@ -18,6 +20,44 @@ tags:
   - name: knowledge
     description: 지식베이스 동기화/상태
 paths:
+  /upload-image:
+    post:
+      tags:
+        - image
+      summary: OCR 대상 이미지 업로드
+      description: 프론트에서 전달한 이미지 파일을 DB에 저장하고, NAVER CLOVA OCR을 즉시 호출해 추출 텍스트를 함께 저장합니다.
+      operationId: uploadImage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: 이미지 저장 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadImageResponse'
+        '400':
+          description: 잘못된 업로드 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 내부 저장 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /health:
     get:
       tags:
@@ -685,3 +725,35 @@ components:
         error:
           type: string
           description: 오류 메시지
+    UploadImageResponse:
+      type: object
+      required:
+        - id
+        - file_name
+        - content_type
+        - file_size_bytes
+        - ocr_provider
+        - ocr_status
+        - created_at
+      properties:
+        id:
+          type: string
+          description: 업로드 이미지 ID(UUID)
+        file_name:
+          type: string
+        content_type:
+          type: string
+        file_size_bytes:
+          type: integer
+        ocr_provider:
+          type: string
+          enum: [clova]
+        ocr_status:
+          type: string
+          enum: [pending, processing, done, failed]
+        ocr_text:
+          type: string
+          description: CLOVA OCR이 추출한 텍스트
+        created_at:
+          type: string
+          format: date-time

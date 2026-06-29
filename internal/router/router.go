@@ -6,12 +6,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/limbs713/BE/internal/handler"
+	"github.com/limbs713/BE/internal/image"
 	"github.com/limbs713/BE/internal/rag"
 )
 
 // New creates and configures the Gin engine with all routes registered.
 // 새로운 라우트는 여기에 추가하세요.
-func New(ragSvc *rag.Service) *gin.Engine {
+func New(ragSvc *rag.Service, imageSvc *image.Service) *gin.Engine {
 	r := gin.Default()
 	r.Use(cors())
 
@@ -19,6 +20,7 @@ func New(ragSvc *rag.Service) *gin.Engine {
 
 	// 검토
 	r.POST("/review", handler.Review(ragSvc))
+	r.POST("/upload-image", handler.UploadImage(imageSvc))
 
 	// 히스토리 (정적 경로 /history/stats 를 :id 보다 먼저 등록)
 	r.GET("/history", handler.History(ragSvc))
