@@ -1,14 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="118" failures="0" errors="0" time="1.652906">
-	<testsuite tests="0" failures="0" time="0.161000" name="github.com/limbs713/BE/cmd/server" timestamp="2026-06-30T10:27:40+09:00">
+<testsuites tests="138" failures="0" errors="0" time="1.802380">
+	<testsuite tests="0" failures="0" time="0.131000" name="github.com/limbs713/BE/cmd/server" timestamp="2026-06-30T10:30:20+09:00">
 		<properties>
 			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
 		</properties>
 	</testsuite>
-	<testsuite tests="27" failures="0" time="1.254000" name="github.com/limbs713/BE/internal/handler" timestamp="2026-06-30T10:27:40+09:00">
+	<testsuite tests="31" failures="0" time="1.114000" name="github.com/limbs713/BE/internal/handler" timestamp="2026-06-30T10:30:21+09:00">
 		<properties>
 			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
 		</properties>
+		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestUploadImage_Validation/image_필드_없음_→_400" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestUploadImage_Validation/빈_파일_→_400" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestUploadImage_Validation/이미지가_아닌_파일_→_400" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestUploadImage_Validation" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestReviewHandler_Success" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestReviewHandler_SaveErrorStillOK" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestReviewHandler_ServiceError" time="0.000000"></testcase>
@@ -37,7 +41,28 @@
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestCORS_Preflight" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestUnknownRoute_404" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="89" failures="0" time="0.381000" name="github.com/limbs713/BE/internal/rag" timestamp="2026-06-30T10:27:40+09:00">
+	<testsuite tests="16" failures="0" time="0.001000" name="github.com/limbs713/BE/internal/image" timestamp="2026-06-30T10:30:21+09:00">
+		<properties>
+			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
+		</properties>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/photo.jpg" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/photo.JPG" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/photo.jpeg" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/photo.JPEG" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/scan.png" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/doc.pdf" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/image.tiff" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/image.gif" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/image.bmp" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/unknown.webp" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/noextension" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat/archive.tar.gz" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestDetectImageFormat" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestNullableTime/zero_time_returns_nil" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestNullableTime/non-zero_time_returns_the_value" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/image" name="TestNullableTime" time="0.000000"></testcase>
+	</testsuite>
+	<testsuite tests="89" failures="0" time="0.001000" name="github.com/limbs713/BE/internal/rag" timestamp="2026-06-30T10:30:21+09:00">
 		<properties>
 			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
 		</properties>
@@ -131,7 +156,7 @@
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestVectorLiteral/음수_포함" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestVectorLiteral" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="2" failures="0" time="0.816000" name="github.com/limbs713/BE/internal/router" timestamp="2026-06-30T10:27:40+09:00">
+	<testsuite tests="2" failures="0" time="0.679000" name="github.com/limbs713/BE/internal/router" timestamp="2026-06-30T10:30:21+09:00">
 		<properties>
 			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
 		</properties>

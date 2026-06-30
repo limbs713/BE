@@ -7,13 +7,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/limbs713/BE/internal/image"
 	"github.com/limbs713/BE/internal/rag"
 	"github.com/limbs713/BE/internal/router"
 )
 
 func TestNew_RegistersHealthAndCORS(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r := router.New(&rag.Service{})
+	r := router.New(&rag.Service{}, &image.Service{})
 
 	// 등록된 라우트가 동작하는지 (health)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -31,7 +32,7 @@ func TestNew_RegistersHealthAndCORS(t *testing.T) {
 
 func TestNew_PreflightShortCircuits(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r := router.New(&rag.Service{})
+	r := router.New(&rag.Service{}, &image.Service{})
 
 	req := httptest.NewRequest(http.MethodOptions, "/generate", nil)
 	w := httptest.NewRecorder()

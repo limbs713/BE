@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/limbs713/BE/internal/image"
 	"github.com/limbs713/BE/internal/rag"
 	"github.com/limbs713/BE/internal/router"
 )
@@ -17,7 +18,7 @@ import (
 // 끝나는 경로만 다루므로 nil 의존성으로도 안전하다.
 func newTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	return router.New(&rag.Service{})
+	return router.New(&rag.Service{}, &image.Service{})
 }
 
 func do(t *testing.T, r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
