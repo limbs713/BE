@@ -6,6 +6,8 @@
 #   ECR_REGISTRY   - 예: 299139629755.dkr.ecr.ap-northeast-2.amazonaws.com
 #   DATABASE_URL   - 예: postgres://postgres:seasonal@10.0.2.55:5432/postgres
 #   OPENAI_API_KEY - OpenAI API 키
+#   CLOVA_OCR_URL  - NAVER CLOVA OCR invoke URL
+#   CLOVA_OCR_SECRET - NAVER CLOVA OCR secret key
 
 services:
   app:
@@ -16,6 +18,8 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CLOVA_OCR_URL: ${CLOVA_OCR_URL}
+      CLOVA_OCR_SECRET: ${CLOVA_OCR_SECRET}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 30s

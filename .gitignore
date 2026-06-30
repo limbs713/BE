@@ -24,11 +24,14 @@ go.work.sum
 # Environment variables
 .env
 .env.local
+.env.*
 
 # IDE
 .idea/
 .vscode/
 *.iml
+.venv/
+.claude
 
 # OS
 .DS_Store
