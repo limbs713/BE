@@ -20,10 +20,15 @@ type embedSpec struct {
 
 // embedSpecs 는 /knowledge/sync 와 재임베딩이 다루는 테이블 목록입니다.
 // (ad_images 는 OCR 이미지라 임베딩 대상이 아니므로 제외.)
+// textSQL 주의: 적재 임베딩(/knowledge/sync)과 수동 재임베딩(reembed_all.py)의
+// 텍스트 구성은 글자 단위로 동일해야 한다(어긋나면 검색이 깨짐).
 var embedSpecs = []embedSpec{
-	{"sensitive_events", "id", "COALESCE(title,'')||' '||COALESCE(description,'')"},
-	{"sensitive_issues", "issue_id", "COALESCE(title,'')||' '||COALESCE(description,'')||' '||COALESCE(new_description,'')"},
-	{"slang_terms", "id", "COALESCE(expression,'')||' '||COALESCE(meaning,'')||' '||COALESCE(nuance,'')||' '||COALESCE(reason,'')"},
+	// trigger_expressions(사용자 표면 표현)를 추가해 recall 보강. jsonb 비배열/NULL 방어.
+	{"sensitive_events", "id", "COALESCE(title,'')||' '||COALESCE(description,'')||' '||CASE WHEN jsonb_typeof(trigger_expressions)='array' THEN array_to_string(ARRAY(SELECT jsonb_array_elements_text(trigger_expressions)),' ') ELSE '' END"},
+	// description≈new_description 중복 제거: 정제된 정본(new_description) 우선, 비면 description.
+	{"sensitive_issues", "issue_id", "COALESCE(title,'')||' '||COALESCE(NULLIF(new_description,''), description, '')"},
+	// nuance(긍정/부정/중립 범주형)는 노이즈라 제외.
+	{"slang_terms", "id", "COALESCE(expression,'')||' '||COALESCE(meaning,'')||' '||COALESCE(reason,'')"},
 	{"mim_terms", "id", "COALESCE(word,'')||' '||COALESCE(definition,'')"},
 }
 

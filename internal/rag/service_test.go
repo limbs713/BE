@@ -55,8 +55,8 @@ func TestReview_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Review: %v", err)
 	}
-	// 점수→레벨 정합성 보정
-	if got.Verdict.Score != 80 || got.Verdict.RiskLevel != "high" || !got.Verdict.Risky {
+	// 점수는 근거에서 결정론적으로 산출(high 표현 1건 → 75). LLM 의 score(80)는 쓰지 않는다.
+	if got.Verdict.Score != 75 || got.Verdict.RiskLevel != "high" || !got.Verdict.Risky {
 		t.Errorf("verdict = %+v", got.Verdict)
 	}
 	// 하이라이트 오프셋 역매핑 ("광복절" 은 입력 맨 앞 → start 0)
@@ -80,8 +80,8 @@ func TestReview_EndToEnd(t *testing.T) {
 }
 
 // judgeJSONLowScore 는 전체 score 는 낮게(none 밴드) 내면서 high 하이라이트를 함께 내는,
-// LLM 이 흔히 만드는 모순 응답이다. 후처리가 severityScoreFloor 로 score 를 위험 밴드(67)까지
-// 끌어올려 게이지·칩을 일치시키는지 검증하기 위한 입력이다.
+// LLM 이 흔히 만드는 모순 응답이다. 후처리(computeScore)가 LLM 의 score(10)를 버리고
+// 근거(high 표현 1건)에서 점수를 재계산해 위험 밴드(75)로 끌어올리는지 검증하기 위한 입력이다.
 const judgeJSONLowScore = `{
   "score": 10,
   "reasons": ["표현 자체는 약하나 민감 사건과 연결"],
@@ -90,7 +90,7 @@ const judgeJSONLowScore = `{
   "rewrite": {"after": "여름 한정 세일"}
 }`
 
-func TestReview_RaisesScoreToSeverityFloor(t *testing.T) {
+func TestReview_ScoreDerivedFromEvidence(t *testing.T) {
 	mock, _ := pgxmock.NewPool()
 	defer mock.Close()
 	mock.MatchExpectationsInOrder(false)
@@ -118,9 +118,9 @@ func TestReview_RaisesScoreToSeverityFloor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Review: %v", err)
 	}
-	// LLM score=10 이지만 high 하이라이트가 있어 위험 밴드 하한(67)까지 끌어올려야 한다.
-	if got.Verdict.Score != 67 || got.Verdict.RiskLevel != "high" || !got.Verdict.Risky {
-		t.Errorf("floor 보정 실패: verdict = %+v, want score=67/high/risky", got.Verdict)
+	// LLM score=10 은 무시하고, high 표현 1건의 근거로 75(위험)를 산출해야 한다.
+	if got.Verdict.Score != 75 || got.Verdict.RiskLevel != "high" || !got.Verdict.Risky {
+		t.Errorf("근거기반 점수 실패: verdict = %+v, want score=75/high/risky", got.Verdict)
 	}
 }
 
@@ -174,8 +174,8 @@ func TestGenerate_ReviewsCandidates(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("candidates = %d, want 1", len(got))
 	}
-	// score 80 -> 안전 라벨 '위험'
-	if got[0].Score != 80 || got[0].SafetyLabel != "위험" {
+	// 근거(high 표현 1건) → score 75, 안전 라벨 '위험'
+	if got[0].Score != 75 || got[0].SafetyLabel != "위험" {
 		t.Errorf("candidate = %+v", got[0])
 	}
 	if got[0].ReviewID == "" {

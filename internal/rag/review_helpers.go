@@ -95,6 +95,56 @@ func severityScoreFloor(highlights []Highlight) int {
 	return floor
 }
 
+// clampBand 는 점수를 [lo,hi] 밴드 안으로 보정합니다.
+func clampBand(score, lo, hi int) int {
+	if score < lo {
+		return lo
+	}
+	if score > hi {
+		return hi
+	}
+	return score
+}
+
+// computeScore 는 하이라이트(근거)만으로 0~100 위험 점수를 결정론적으로 산출합니다.
+// LLM 이 내는 자유 형식 score·confidence 는 쓰지 않는다 — 그 자체가 노이즈원이라, 같은 문구에도
+// 점수가 흔들리는 원인이었다. 대신 '플래그된 표현의 심각도와 개수'라는 관측 가능한 근거만 쓴다.
+// 따라서 같은 하이라이트 → 항상 같은 점수이며, 숫자가 곧 "어느 밴드 + 그 안에서 근거가 얼마나 누적됐나"를 뜻한다.
+//
+//   위험(high 존재)       : 75 기준, 추가 high 당 +8, 동반 needs_review 당 +3(최대 3건) → [67,100]
+//   주의(needs_review 만)  : 45 기준, 추가 needs_review 당 +6                        → [34, 66]
+//   낮음(low 만)          : 15 기준, 추가 low 당 +4                                 → [ 1, 33] (라벨은 안전)
+//   근거 없음             : 0 (안전)
+//
+// (입력은 normalizeSeverity 로 high|needs_review|low 로 정규화된 하이라이트여야 합니다.)
+func computeScore(highlights []Highlight) int {
+	var nHigh, nNeed, nLow int
+	for _, h := range highlights {
+		switch h.Severity {
+		case "high":
+			nHigh++
+		case "needs_review":
+			nNeed++
+		case "low":
+			nLow++
+		}
+	}
+	switch {
+	case nHigh > 0:
+		companion := nNeed
+		if companion > 3 {
+			companion = 3
+		}
+		return clampBand(75+8*(nHigh-1)+3*companion, 67, 100)
+	case nNeed > 0:
+		return clampBand(45+6*(nNeed-1), 34, 66)
+	case nLow > 0:
+		return clampBand(15+4*(nLow-1), 1, 33)
+	default:
+		return 0
+	}
+}
+
 // phraseOffsets 는 input 의 fromByte 이후에서 phrase 를 찾아 rune(문자) 오프셋
 // [start, end) 와 다음 검색 시작 byte 위치(matchEndByte)를 반환합니다.
 // 찾지 못하면 ok=false. JS 측 인덱싱과 맞추기 위해 byte가 아닌 rune 단위로 반환합니다.

@@ -106,6 +106,63 @@ func TestSeverityScoreFloor(t *testing.T) {
 	}
 }
 
+func TestClampBand(t *testing.T) {
+	cases := []struct {
+		name          string
+		score, lo, hi int
+		want          int
+	}{
+		{"하한 미만 → 하한", 50, 67, 100, 67},
+		{"상한 초과 → 상한", 150, 67, 100, 100},
+		{"밴드 안 → 그대로", 80, 67, 100, 80},
+		{"하한 경계 → 그대로", 67, 67, 100, 67},
+		{"상한 경계 → 그대로", 100, 67, 100, 100},
+	}
+	for _, c := range cases {
+		if got := clampBand(c.score, c.lo, c.hi); got != c.want {
+			t.Errorf("%s: clampBand(%d,%d,%d) = %d, want %d", c.name, c.score, c.lo, c.hi, got, c.want)
+		}
+	}
+}
+
+func TestComputeScore(t *testing.T) {
+	cases := []struct {
+		name string
+		sev  []string
+		want int
+	}{
+		// 근거 없음 → 0(안전)
+		{"하이라이트 없음 → 0", nil, 0},
+		{"빈 슬라이스 → 0", []string{}, 0},
+		{"알 수 없는 severity만 → 0", []string{"unknown"}, 0},
+		// 낮음 밴드 [1,33]: 15 기준, 추가 low 당 +4
+		{"낮음 1건 → 15", []string{"low"}, 15},
+		{"낮음 2건 → 19", []string{"low", "low"}, 19},
+		{"낮음 6건 → 상한 33", []string{"low", "low", "low", "low", "low", "low"}, 33},
+		// 주의 밴드 [34,66]: 45 기준, 추가 needs_review 당 +6
+		{"주의 1건 → 45", []string{"needs_review"}, 45},
+		{"주의 2건 → 51", []string{"needs_review", "needs_review"}, 51},
+		{"주의 5건 → 상한 66", []string{"needs_review", "needs_review", "needs_review", "needs_review", "needs_review"}, 66},
+		{"주의 우선(낮음 무시) → 45", []string{"needs_review", "low", "low"}, 45},
+		// 위험 밴드 [67,100]: 75 기준, 추가 high 당 +8, 동반 needs_review 당 +3(최대 3)
+		{"위험 1건 → 75", []string{"high"}, 75},
+		{"위험 2건 → 83", []string{"high", "high"}, 83},
+		{"위험 1 + 주의 1 → 78", []string{"high", "needs_review"}, 78},
+		{"위험 1 + 주의 5(동반 상한 3) → 84", []string{"high", "needs_review", "needs_review", "needs_review", "needs_review", "needs_review"}, 84},
+		{"위험 5건 → 상한 100", []string{"high", "high", "high", "high", "high"}, 100},
+		{"위험 우선(낮음 무시) → 75", []string{"high", "low", "low"}, 75},
+	}
+	for _, c := range cases {
+		hs := make([]Highlight, len(c.sev))
+		for i, s := range c.sev {
+			hs[i] = Highlight{Severity: s}
+		}
+		if got := computeScore(hs); got != c.want {
+			t.Errorf("%s: computeScore = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func TestPhraseOffsets(t *testing.T) {
 	input := "이 여름, 책상을 탁 치고 떠나는 특가"
 
