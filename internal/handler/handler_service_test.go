@@ -30,6 +30,11 @@ type fakeService struct {
 	trendsErr   error
 	candidates  []rag.GenerateCandidate
 	generateErr error
+	events      []rag.EventListItem
+	eventsTotal int
+	eventsErr   error
+	event       *rag.EventDetail
+	eventErr    error
 	sync        *rag.SyncResult
 	syncErr     error
 	status      *rag.KnowledgeStatus
@@ -56,6 +61,12 @@ func (f *fakeService) Trends(ctx context.Context, limit int) ([]rag.Trend, error
 }
 func (f *fakeService) Generate(ctx context.Context, req rag.GenerateRequest) ([]rag.GenerateCandidate, error) {
 	return f.candidates, f.generateErr
+}
+func (f *fakeService) ListEvents(ctx context.Context, limit, offset int) ([]rag.EventListItem, int, error) {
+	return f.events, f.eventsTotal, f.eventsErr
+}
+func (f *fakeService) GetEvent(ctx context.Context, id string) (*rag.EventDetail, error) {
+	return f.event, f.eventErr
 }
 func (f *fakeService) SyncKnowledge(ctx context.Context) (*rag.SyncResult, error) {
 	return f.sync, f.syncErr
@@ -182,6 +193,37 @@ func TestTrendsHandler(t *testing.T) {
 	}
 	bad := &fakeService{trendsErr: context.DeadlineExceeded}
 	if w := serve(handler.Trends(bad), http.MethodGet, "/trends", "/trends", ""); w.Code != http.StatusInternalServerError {
+		t.Fatalf("err status = %d", w.Code)
+	}
+}
+
+func TestEventsHandler(t *testing.T) {
+	ok := &fakeService{events: []rag.EventListItem{{ID: "evt_1", Title: "사건"}}, eventsTotal: 1}
+	if w := serve(handler.Events(ok), http.MethodGet, "/events", "/events?limit=5&offset=0", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"total":1`) {
+		t.Fatalf("ok status=%d body=%s", w.Code, w.Body.String())
+	}
+	// nil 정규화
+	nilE := &fakeService{events: nil, eventsTotal: 0}
+	if w := serve(handler.Events(nilE), http.MethodGet, "/events", "/events", ""); !strings.Contains(w.Body.String(), `"events":[]`) {
+		t.Fatalf("nil 정규화 실패: %s", w.Body.String())
+	}
+	bad := &fakeService{eventsErr: context.DeadlineExceeded}
+	if w := serve(handler.Events(bad), http.MethodGet, "/events", "/events", ""); w.Code != http.StatusInternalServerError {
+		t.Fatalf("err status = %d", w.Code)
+	}
+}
+
+func TestEventDetailHandler(t *testing.T) {
+	ok := &fakeService{event: &rag.EventDetail{ID: "evt_9", Issues: []rag.EventIssue{}}}
+	if w := serve(handler.EventDetail(ok), http.MethodGet, "/events/:id", "/events/evt_9", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "evt_9") {
+		t.Fatalf("ok status=%d body=%s", w.Code, w.Body.String())
+	}
+	notFound := &fakeService{eventErr: pgx.ErrNoRows}
+	if w := serve(handler.EventDetail(notFound), http.MethodGet, "/events/:id", "/events/nope", ""); w.Code != http.StatusNotFound {
+		t.Fatalf("404 status = %d", w.Code)
+	}
+	bad := &fakeService{eventErr: context.DeadlineExceeded}
+	if w := serve(handler.EventDetail(bad), http.MethodGet, "/events/:id", "/events/x", ""); w.Code != http.StatusInternalServerError {
 		t.Fatalf("err status = %d", w.Code)
 	}
 }

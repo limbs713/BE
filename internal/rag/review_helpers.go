@@ -72,6 +72,29 @@ func normalizeSeverity(sev string) string {
 	}
 }
 
+// severityScoreFloor 는 하이라이트 심각도 중 가장 높은 것에 대응하는 전체 점수의 하한을 돌려줍니다.
+//   - 위험(high) 표현이 하나라도 있으면 67(위험 밴드 하한)
+//   - 주의(needs_review) 표현이 있으면 34(주의 밴드 하한)
+//   - 그 외 0
+//
+// LLM 이 전체 score 와 표현별 severity 를 따로 내며 "전체는 안전(score<34)인데 주의 표현 1건"
+// 같은 모순이 생기는데, 후처리에서 score 를 이 하한까지 끌어올려 게이지와 칩을 항상 일치시킵니다.
+// (입력은 normalizeSeverity 로 high|needs_review|low 로 정규화된 하이라이트여야 합니다.)
+func severityScoreFloor(highlights []Highlight) int {
+	floor := 0
+	for _, h := range highlights {
+		switch h.Severity {
+		case "high":
+			return 67
+		case "needs_review":
+			if floor < 34 {
+				floor = 34
+			}
+		}
+	}
+	return floor
+}
+
 // phraseOffsets 는 input 의 fromByte 이후에서 phrase 를 찾아 rune(문자) 오프셋
 // [start, end) 와 다음 검색 시작 byte 위치(matchEndByte)를 반환합니다.
 // 찾지 못하면 ok=false. JS 측 인덱싱과 맞추기 위해 byte가 아닌 rune 단위로 반환합니다.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Topic 은 sensitive_events(민감 주제 마스터)에서 검색된 한 건입니다.
@@ -112,6 +113,98 @@ func (s *store) searchSimilar(ctx context.Context, spec searchSpec, vec []float3
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+// listEvents 는 민감 사건을 페이징 조회하고, 각 사건에 연결된 전례 건수와 전체 건수를 함께 반환합니다.
+// (sensitive_events LEFT JOIN sensitive_issues 로 issue_count 집계.)
+func (s *store) listEvents(ctx context.Context, limit, offset int) ([]EventListItem, int, error) {
+	const countQ = `SELECT COUNT(*) FROM sensitive_events`
+	var total int
+	if err := s.pool.QueryRow(ctx, countQ).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("민감 사건 건수 조회 실패: %w", err)
+	}
+
+	const q = `
+		SELECT e.id, e.title, COALESCE(e.category, ''), COALESCE(e.event_date, ''),
+		       COUNT(i.issue_id) AS issue_count
+		FROM sensitive_events e
+		LEFT JOIN sensitive_issues i ON i.event_id = e.id
+		GROUP BY e.id, e.title, e.category, e.event_date
+		ORDER BY e.event_date DESC NULLS LAST, e.id
+		LIMIT $1 OFFSET $2`
+	rows, err := s.pool.Query(ctx, q, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("민감 사건 목록 조회 실패: %w", err)
+	}
+	defer rows.Close()
+
+	var out []EventListItem
+	for rows.Next() {
+		var it EventListItem
+		var eventDate string
+		if err := rows.Scan(&it.ID, &it.Title, &it.Category, &eventDate, &it.IssueCount); err != nil {
+			return nil, 0, fmt.Errorf("민감 사건 행 스캔 실패: %w", err)
+		}
+		it.Year = yearFromDate(eventDate)
+		out = append(out, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("민감 사건 순회 실패: %w", err)
+	}
+	return out, total, nil
+}
+
+// getEvent 는 사건 본체(전례 제외)를 조회합니다. 없으면 pgx.ErrNoRows 를 감싸 반환합니다.
+func (s *store) getEvent(ctx context.Context, id string) (*EventDetail, error) {
+	const q = `
+		SELECT id, title, COALESCE(category, ''), COALESCE(event_date, ''), COALESCE(description, '')
+		FROM sensitive_events
+		WHERE id = $1`
+	var d EventDetail
+	var eventDate string
+	if err := s.pool.QueryRow(ctx, q, id).Scan(&d.ID, &d.Title, &d.Category, &eventDate, &d.Description); err != nil {
+		return nil, fmt.Errorf("민감 사건 조회 실패: %w", err)
+	}
+	d.Year = yearFromDate(eventDate)
+	return &d, nil
+}
+
+// issuesForEvent 는 사건에 연결된 논란 전례를 FE 필드 형태로 매핑해 반환합니다.
+// (brand←title, copy←description, year←issue_date. campaign/level/result 는 원천이 없어 빈 값.)
+func (s *store) issuesForEvent(ctx context.Context, eventID string) ([]EventIssue, error) {
+	const q = `
+		SELECT issue_id, COALESCE(title, ''), COALESCE(description, ''), issue_date
+		FROM sensitive_issues
+		WHERE event_id = $1
+		ORDER BY issue_id`
+	rows, err := s.pool.Query(ctx, q, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("연결 전례 조회 실패: %w", err)
+	}
+	defer rows.Close()
+
+	var out []EventIssue
+	for rows.Next() {
+		var (
+			it        EventIssue
+			title     string
+			desc      string
+			issueDate *time.Time
+		)
+		if err := rows.Scan(&it.ID, &title, &desc, &issueDate); err != nil {
+			return nil, fmt.Errorf("연결 전례 행 스캔 실패: %w", err)
+		}
+		it.Brand = title
+		it.Copy = desc
+		if issueDate != nil {
+			it.Year = strconv.Itoa(issueDate.Year())
+		}
+		out = append(out, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("연결 전례 순회 실패: %w", err)
+	}
+	return out, nil
 }
 
 // vectorLiteral 는 []float32 를 pgvector 텍스트 리터럴("[0.1,0.2,...]")로 만듭니다.

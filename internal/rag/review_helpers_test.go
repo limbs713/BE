@@ -83,6 +83,29 @@ func TestNormalizeSeverity(t *testing.T) {
 	}
 }
 
+func TestSeverityScoreFloor(t *testing.T) {
+	cases := []struct {
+		name string
+		sev  []string
+		want int
+	}{
+		{"하이라이트 없음 → 0", nil, 0},
+		{"낮음만 → 0", []string{"low"}, 0},
+		{"주의 1건 → 34", []string{"needs_review"}, 34},
+		{"주의+낮음 → 34", []string{"low", "needs_review"}, 34},
+		{"위험 포함 → 67", []string{"needs_review", "high", "low"}, 67},
+	}
+	for _, c := range cases {
+		hs := make([]Highlight, len(c.sev))
+		for i, s := range c.sev {
+			hs[i] = Highlight{Severity: s}
+		}
+		if got := severityScoreFloor(hs); got != c.want {
+			t.Errorf("%s: severityScoreFloor = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func TestPhraseOffsets(t *testing.T) {
 	input := "이 여름, 책상을 탁 치고 떠나는 특가"
 

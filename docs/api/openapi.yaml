@@ -13,6 +13,8 @@ tags:
     description: 광고 문구 위험도 검토(RAG)
   - name: history
     description: 검토 히스토리 조회
+  - name: events
+    description: 민감 사건/연결 전례 조회
   - name: generate
     description: 트렌드어 기반 광고 문구 생성
   - name: knowledge
@@ -164,6 +166,80 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: 해당 검토 히스토리를 찾을 수 없습니다
+  /events:
+    get:
+      tags:
+        - events
+      summary: 민감 사건 목록
+      description: >-
+        sensitive_events 를 페이징 조회하고, 각 사건에 연결된 전례(sensitive_issues)
+        건수와 전체 건수를 함께 반환합니다. event_date 내림차순으로 정렬됩니다.
+      operationId: listEvents
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: 페이지 크기(기본 20). 0 이하 또는 비정수면 기본값 사용.
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          description: 건너뛸 행 수(기본 0). 음수 또는 비정수면 기본값 사용.
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: 민감 사건 목록과 전체 건수
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsResponse'
+        '500':
+          description: 내부 처리 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /events/{id}:
+    get:
+      tags:
+        - events
+      summary: 민감 사건 상세
+      description: id 로 사건 본체와 연결된 논란 전례 목록을 합쳐 반환합니다.
+      operationId: eventDetail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 민감 사건 ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 사건 상세(연결 전례 포함)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventDetail'
+        '404':
+          description: 해당 민감 사건을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: 해당 민감 사건을 찾을 수 없습니다
+        '500':
+          description: 내부 처리 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /trends:
     get:
       tags:
@@ -577,6 +653,103 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/HistoryStatCard'
+    EventListItem:
+      type: object
+      description: 민감 사건 목록의 한 행
+      required:
+        - id
+        - title
+        - category
+        - year
+        - issue_count
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        year:
+          type: string
+          description: event_date(텍스트)에서 추출한 연도(없으면 빈 문자열)
+        issue_count:
+          type: integer
+          description: 이 사건에 연결된 논란 전례(sensitive_issues) 건수
+          minimum: 0
+    EventsResponse:
+      type: object
+      required:
+        - events
+        - total
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventListItem'
+        total:
+          type: integer
+          description: 전체 민감 사건 건수
+    EventIssue:
+      type: object
+      description: >-
+        사건에 연결된 논란 전례 한 건. FE 기대 필드(brand/campaign/copy/level/result)에 맞춰
+        키를 노출하되, 운영 DB에 원천이 없는 값은 빈 문자열로 둔다.
+      required:
+        - id
+        - brand
+        - campaign
+        - year
+        - level
+        - copy
+        - result
+      properties:
+        id:
+          type: string
+        brand:
+          type: string
+          description: 브랜드명(title 매핑)
+        campaign:
+          type: string
+          description: 캠페인명. 원천이 없어 빈 문자열(FE에서 정합).
+        year:
+          type: string
+          description: issue_date 의 연도(없으면 빈 문자열)
+        level:
+          type: string
+          description: 위험 등급. 원천이 없어 빈 문자열.
+        copy:
+          type: string
+          description: 사건/광고 설명(description 매핑)
+        result:
+          type: string
+          description: 결과. 원천이 없어 빈 문자열.
+    EventDetail:
+      type: object
+      description: 민감 사건 상세(연결 전례 포함)
+      required:
+        - id
+        - title
+        - year
+        - category
+        - description
+        - issues
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        year:
+          type: string
+          description: event_date 에서 추출한 연도(없으면 빈 문자열)
+        category:
+          type: string
+        description:
+          type: string
+        issues:
+          type: array
+          description: 이 사건에 연결된 논란 전례 목록(없으면 빈 배열)
+          items:
+            $ref: '#/components/schemas/EventIssue'
     Trend:
       type: object
       description: trigger_expressions 를 펼쳐 만든 트렌드어 한 건
@@ -584,6 +757,8 @@ components:
         - tag
         - category
         - up
+        - rank
+        - delta
       properties:
         tag:
           type: string
@@ -594,6 +769,13 @@ components:
         up:
           type: integer
           description: 활성도(등장 빈도 기반 의사 점수)
+        rank:
+          type: integer
+          description: 활성도 내림차순 순위(1부터)
+          minimum: 1
+        delta:
+          type: integer
+          description: 전주 대비 변동. 현재 시계열 스냅샷이 없어 항상 0(추후 산출).
     TrendsResponse:
       type: object
       required:

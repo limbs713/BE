@@ -14,10 +14,14 @@ import (
 //   - Tag: '#'을 붙인 표현(예: "#광복절")
 //   - Category: 해당 표현이 속한 카테고리
 //   - Up: 활성도(등장 빈도 기반 의사 점수)
+//   - Rank: 활성도 내림차순 순위(1부터)
+//   - Delta: 전주 대비 변동. 현재 시계열 스냅샷이 없어 0 으로 둔다(추후 산출).
 type Trend struct {
 	Tag      string `json:"tag"`
 	Category string `json:"category"`
 	Up       int    `json:"up"`
+	Rank     int    `json:"rank"`
+	Delta    int    `json:"delta"`
 }
 
 // trendingTerms 는 sensitive_events 의 trigger_expressions 배열을 표현 단위로 펼친 뒤,
@@ -65,6 +69,8 @@ func (s *store) trendingTerms(ctx context.Context, limit int) ([]Trend, error) {
 			Tag:      "#" + expr,
 			Category: category,
 			Up:       up,
+			// 쿼리가 up DESC 로 정렬되므로 누적 인덱스가 곧 순위(1부터)다.
+			Rank: len(out) + 1,
 		})
 	}
 	if err := rows.Err(); err != nil {

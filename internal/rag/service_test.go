@@ -79,6 +79,51 @@ func TestReview_EndToEnd(t *testing.T) {
 	}
 }
 
+// judgeJSONLowScore 는 전체 score 는 낮게(none 밴드) 내면서 high 하이라이트를 함께 내는,
+// LLM 이 흔히 만드는 모순 응답이다. 후처리가 severityScoreFloor 로 score 를 위험 밴드(67)까지
+// 끌어올려 게이지·칩을 일치시키는지 검증하기 위한 입력이다.
+const judgeJSONLowScore = `{
+  "score": 10,
+  "reasons": ["표현 자체는 약하나 민감 사건과 연결"],
+  "advice": "표현을 순화하세요",
+  "highlights": [{"phrase":"광복절","severity":"high","reason":"역사 민감","confidence":0.9}],
+  "rewrite": {"after": "여름 한정 세일"}
+}`
+
+func TestReview_RaisesScoreToSeverityFloor(t *testing.T) {
+	mock, _ := pgxmock.NewPool()
+	defer mock.Close()
+	mock.MatchExpectationsInOrder(false)
+
+	mock.ExpectQuery("FROM sensitive_events").
+		WithArgs(pgxmock.AnyArg(), poolSize).
+		WillReturnRows(searchVectorRows())
+	mock.ExpectQuery("FROM sensitive_issues").
+		WithArgs(pgxmock.AnyArg(), relatedK).
+		WillReturnRows(relatedRows("i1", "과거 광복절 마케팅 논란", "HISTORY", "설명", 0.4))
+	mock.ExpectQuery("FROM slang_terms").
+		WithArgs(pgxmock.AnyArg(), relatedK).
+		WillReturnRows(relatedRows("s1", "쿨데레", "중립", "차갑지만 다정", 0.3))
+	mock.ExpectQuery("FROM mim_terms").
+		WithArgs(pgxmock.AnyArg(), relatedK).
+		WillReturnRows(relatedRows("m1", "회전문 관광객", "", "반복 방문 외국인", 0.3))
+
+	svc := &Service{
+		pool:  mock,
+		store: &store{pool: mock},
+		ai:    fakeAI{embed: []float32{0.1, 0.2}, judge: judgeJSONLowScore, rewrite: "광복절"},
+	}
+
+	got, err := svc.Review(context.Background(), "광복절 기념 세일")
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	// LLM score=10 이지만 high 하이라이트가 있어 위험 밴드 하한(67)까지 끌어올려야 한다.
+	if got.Verdict.Score != 67 || got.Verdict.RiskLevel != "high" || !got.Verdict.Risky {
+		t.Errorf("floor 보정 실패: verdict = %+v, want score=67/high/risky", got.Verdict)
+	}
+}
+
 func TestReview_EmbedError(t *testing.T) {
 	mock, _ := pgxmock.NewPool()
 	defer mock.Close()

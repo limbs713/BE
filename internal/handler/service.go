@@ -16,6 +16,8 @@ type Service interface {
 	GetHistory(ctx context.Context, id string) (*rag.ReviewResult, error)
 	Trends(ctx context.Context, limit int) ([]rag.Trend, error)
 	Generate(ctx context.Context, req rag.GenerateRequest) ([]rag.GenerateCandidate, error)
+	ListEvents(ctx context.Context, limit, offset int) ([]rag.EventListItem, int, error)
+	GetEvent(ctx context.Context, id string) (*rag.EventDetail, error)
 	SyncKnowledge(ctx context.Context) (*rag.SyncResult, error)
 	KnowledgeStatus(ctx context.Context) (*rag.KnowledgeStatus, error)
 }

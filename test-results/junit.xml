@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="106" failures="0" errors="0" time="0.948571">
-	<testsuite tests="0" failures="0" time="0.122000" name="github.com/limbs713/BE/cmd/server" timestamp="2026-06-29T16:05:38+09:00">
+<testsuites tests="118" failures="0" errors="0" time="1.652906">
+	<testsuite tests="0" failures="0" time="0.161000" name="github.com/limbs713/BE/cmd/server" timestamp="2026-06-30T10:27:40+09:00">
 		<properties>
 			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
 		</properties>
 	</testsuite>
-	<testsuite tests="25" failures="0" time="0.304000" name="github.com/limbs713/BE/internal/handler" timestamp="2026-06-29T16:05:38+09:00">
+	<testsuite tests="27" failures="0" time="1.254000" name="github.com/limbs713/BE/internal/handler" timestamp="2026-06-30T10:27:40+09:00">
 		<properties>
 			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
 		</properties>
@@ -20,6 +20,8 @@
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestHistoryDetailHandler_NotFound" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestHistoryDetailHandler_Error" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestTrendsHandler" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestEventsHandler" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestEventDetailHandler" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestGenerateHandler" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestKnowledgeHandlers" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestHealth_OK" time="0.000000"></testcase>
@@ -35,10 +37,18 @@
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestCORS_Preflight" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/handler" name="TestUnknownRoute_404" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="79" failures="0" time="0.473000" name="github.com/limbs713/BE/internal/rag" timestamp="2026-06-29T16:05:38+09:00">
+	<testsuite tests="89" failures="0" time="0.381000" name="github.com/limbs713/BE/internal/rag" timestamp="2026-06-30T10:27:40+09:00">
 		<properties>
 			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
 		</properties>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestYearFromDate" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestListEvents_MapsRowsAndCount" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestService_GetEvent_AttachesIssues" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestService_GetEvent_NoIssuesNormalized" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestService_ListEvents_Delegates" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestTrendingTerms_AssignsRank" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestGetEvent_NotFound" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestIssuesForEvent_MapsRows" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestSafetyNote/안전(score&lt;34)은_advice가_있어도_숨김" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestSafetyNote/주의_이상이고_advice_있으면_advice" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestSafetyNote/advice_비고_reasons_있으면_첫_사유" time="0.000000"></testcase>
@@ -100,6 +110,7 @@
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestSafetyLabel" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestStatusLabel" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestNormalizeSeverity" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestSeverityScoreFloor" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestPhraseOffsets/한글_구절_rune_오프셋" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestPhraseOffsets/없는_구절은_ok=false" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestPhraseOffsets/빈_구절은_ok=false" time="0.000000"></testcase>
@@ -107,6 +118,7 @@
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestPhraseOffsets" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestNewReviewID" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestReview_EndToEnd" time="0.000000"></testcase>
+		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestReview_RaisesScoreToSeverityFloor" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestReview_EmbedError" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestGenerate_ReviewsCandidates" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestGenerate_AIError" time="0.000000"></testcase>
@@ -119,7 +131,7 @@
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestVectorLiteral/음수_포함" time="0.000000"></testcase>
 		<testcase classname="github.com/limbs713/BE/internal/rag" name="TestVectorLiteral" time="0.000000"></testcase>
 	</testsuite>
-	<testsuite tests="2" failures="0" time="0.706000" name="github.com/limbs713/BE/internal/router" timestamp="2026-06-29T16:05:38+09:00">
+	<testsuite tests="2" failures="0" time="0.816000" name="github.com/limbs713/BE/internal/router" timestamp="2026-06-30T10:27:40+09:00">
 		<properties>
 			<property name="go.version" value="go1.26.4 darwin/arm64"></property>
 		</properties>
