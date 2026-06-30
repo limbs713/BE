@@ -16,7 +16,7 @@ type Topic struct {
 	Category    string  `json:"category"`
 	EventDate   string  `json:"event_date"`
 	Description string  `json:"description"`
-	Similarity  float64 `json:"similarity"`
+	Similarity  float64 `json:"-"` // 내부 랭킹용. 응답에는 노출하지 않는다.
 }
 
 // topicData 는 융합 랭킹에 쓰는 내부 후보(키워드 포함)입니다.
@@ -33,7 +33,7 @@ type RelatedItem struct {
 	Title      string  `json:"title"`
 	Category   string  `json:"category,omitempty"`
 	Snippet    string  `json:"snippet,omitempty"`
-	Similarity float64 `json:"similarity"`
+	Similarity float64 `json:"-"` // 내부 랭킹용. 응답에는 노출하지 않는다.
 }
 
 // searchSpec 은 벡터 검색 대상 테이블의 컬럼 매핑입니다.

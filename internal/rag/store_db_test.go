@@ -74,10 +74,12 @@ func TestTrendingTerms_MapsRows(t *testing.T) {
 	mock, _ := pgxmock.NewPool()
 	defer mock.Close()
 
-	rows := pgxmock.NewRows([]string{"expr", "category", "up"}).
-		AddRow("광복절", "HISTORY", 5).
-		AddRow("세월호", "DISASTER", 3)
-	mock.ExpectQuery("FROM sensitive_events").
+	// 최근 7일 평균(10) - 직전 7일 평균(0) = 10 → Delta 10 을 검증한다.
+	rising := []int32{0, 0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10}
+	rows := pgxmock.NewRows([]string{"word", "definition", "trend_score", "search_ratios_90d"}).
+		AddRow("중꺾마", "중간에 꺾여도 그냥 한다", 36.2, rising).
+		AddRow("단호박", "단호한 사람", 30.2, []int32{5, 5})
+	mock.ExpectQuery("FROM mim_terms").
 		WithArgs(10).
 		WillReturnRows(rows)
 
@@ -86,8 +88,17 @@ func TestTrendingTerms_MapsRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("trendingTerms: %v", err)
 	}
-	if len(got) != 2 || got[0].Tag != "#광복절" || got[0].Up != 5 {
-		t.Fatalf("got %+v", got)
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2: %+v", len(got), got)
+	}
+	if got[0].Tag != "#중꺾마" || got[0].Up != 36.2 || got[0].Definition != "중간에 꺾여도 그냥 한다" {
+		t.Fatalf("got[0] = %+v, want Tag #중꺾마 Up 36.2 Definition 설정", got[0])
+	}
+	if got[0].Delta != 10 {
+		t.Errorf("got[0].Delta = %d, want 10", got[0].Delta)
+	}
+	if len(got[0].Ratios) != 14 || got[0].Ratios[7] != 10 {
+		t.Errorf("got[0].Ratios = %v, want 14개·index7=10", got[0].Ratios)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Error(err)

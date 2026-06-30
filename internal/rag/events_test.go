@@ -138,12 +138,12 @@ func TestTrendingTerms_AssignsRank(t *testing.T) {
 	mock, _ := pgxmock.NewPool()
 	defer mock.Close()
 
-	mock.ExpectQuery("GROUP BY expr").
+	mock.ExpectQuery("FROM mim_terms").
 		WithArgs(12).
-		WillReturnRows(pgxmock.NewRows([]string{"expr", "category", "up"}).
-			AddRow("700", "신조어", 91).
-			AddRow("갓생", "신조어", 85).
-			AddRow("광복절", "역사", 32))
+		WillReturnRows(pgxmock.NewRows([]string{"word", "definition", "trend_score", "search_ratios_90d"}).
+			AddRow("중꺾마", "중간에 꺾여도 그냥 한다", 9.9, []int32{50, 50}).
+			AddRow("단호박", "단호한 사람", 9.8, []int32{40, 40}).
+			AddRow("에타", "에브리타임", 9.3, []int32{30, 30}))
 
 	s := &store{pool: mock}
 	got, err := s.trendingTerms(context.Background(), 12)
@@ -158,11 +158,14 @@ func TestTrendingTerms_AssignsRank(t *testing.T) {
 			t.Errorf("got[%d].Rank = %d, want %d", i, tr.Rank, i+1)
 		}
 		if tr.Delta != 0 {
-			t.Errorf("got[%d].Delta = %d, want 0(시계열 미도입)", i, tr.Delta)
+			t.Errorf("got[%d].Delta = %d, want 0(평탄한 추이)", i, tr.Delta)
 		}
 	}
-	if got[0].Tag != "#700" {
-		t.Errorf("Tag = %q, want #700", got[0].Tag)
+	if got[0].Tag != "#중꺾마" {
+		t.Errorf("Tag = %q, want #중꺾마", got[0].Tag)
+	}
+	if got[0].Up != 9.9 {
+		t.Errorf("Up = %v, want 9.9", got[0].Up)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Error(err)

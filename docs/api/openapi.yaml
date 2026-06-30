@@ -285,7 +285,7 @@ paths:
       tags:
         - generate
       summary: 트렌드어 목록
-      description: sensitive_events 의 trigger_expressions 를 펼쳐 활성도 상위 N개의 트렌드어를 반환합니다.
+      description: mim_terms(유행어/밈)를 trend_score(활성도) 내림차순 상위 N개로 반환합니다. 각 항목은 신조어 정의, 최근 90일 일별 검색비율 추이(ratios), 전주 대비 변동(delta)을 포함합니다.
       operationId: trends
       parameters:
         - name: limit
@@ -571,7 +571,6 @@ components:
         - category
         - event_date
         - description
-        - similarity
       properties:
         id:
           type: string
@@ -584,10 +583,6 @@ components:
           description: 사건 일자(MM-DD 등)
         description:
           type: string
-        similarity:
-          type: number
-          format: double
-          description: pgvector 코사인 유사도
     RelatedItem:
       type: object
       description: 임베딩 테이블(issues/slang/mim)에서 벡터 유사도로 검색된 한 건
@@ -595,7 +590,6 @@ components:
         - source
         - id
         - title
-        - similarity
       properties:
         source:
           type: string
@@ -611,10 +605,6 @@ components:
         snippet:
           type: string
           description: 설명/의미 요약
-        similarity:
-          type: number
-          format: double
-          description: pgvector 코사인 유사도
     HistoryItem:
       type: object
       description: 검토 히스토리 목록의 한 행(UI 바인딩용 축약 뷰)
@@ -792,30 +782,43 @@ components:
             $ref: '#/components/schemas/EventIssue'
     Trend:
       type: object
-      description: trigger_expressions 를 펼쳐 만든 트렌드어 한 건
+      description: mim_terms(유행어/밈) 한 건의 활성도 정보
       required:
         - tag
         - category
+        - definition
         - up
         - rank
         - delta
+        - ratios
       properties:
         tag:
           type: string
-          description: "'#'을 붙인 표현(예 #광복절)"
+          description: "'#'을 붙인 유행어(예 #중꺾마)"
         category:
           type: string
-          description: 해당 표현이 속한 카테고리
+          description: mim_terms 에는 카테고리가 없어 항상 빈 문자열
+        definition:
+          type: string
+          description: 신조어 설명(mim_terms.definition). 툴팁 표기용.
         up:
-          type: integer
-          description: 활성도(등장 빈도 기반 의사 점수)
+          type: number
+          format: double
+          description: 활성도 점수(trend_score). 음수(하락세)일 수 있다.
         rank:
           type: integer
-          description: 활성도 내림차순 순위(1부터)
+          description: trend_score 내림차순 순위(1부터)
           minimum: 1
         delta:
           type: integer
-          description: 전주 대비 변동. 현재 시계열 스냅샷이 없어 항상 0(추후 산출).
+          description: 최근 7일 평균 검색비율 - 직전 7일 평균(search_ratios_90d 기반). 상승/하락 표기용.
+        ratios:
+          type:
+            - array
+            - 'null'
+          description: 최근 90일 일별 검색비율(0~100, 단어별 자기 정규화). 활성도 추이 차트용. 데이터 없으면 null.
+          items:
+            type: integer
     TrendsResponse:
       type: object
       required:

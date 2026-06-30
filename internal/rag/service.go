@@ -160,8 +160,8 @@ func (s *Service) Review(ctx context.Context, input string) (*ReviewResult, erro
 		return nil, err
 	}
 
-	// 3) LLM 판정 (verdict + 위험 표현 하이라이트 + 안전 대체 문구)
-	verdict, highlights, rewrite, err := s.judge(ctx, input, topics, issues, slang, trends)
+	// 3) LLM 판정 (verdict + 위험 표현 하이라이트 + 안전 대체 문구 + 채택 근거 핸들)
+	verdict, highlights, rewrite, evidence, err := s.judge(ctx, input, topics, issues, slang, trends)
 	if err != nil {
 		return nil, fmt.Errorf("판정 실패: %w", err)
 	}
@@ -185,6 +185,16 @@ func (s *Service) Review(ctx context.Context, input string) (*ReviewResult, erro
 	// risky 는 score(=risk_level) 단일 기준으로 정한다. highlights 유무로 별도 분기하면
 	// score=0(none)인데 risky=true 가 되는 모순이 생긴다.
 	verdict.Risky = verdict.Score > 0
+	// 관련 근거는 LLM 이 실제 근거로 채택한 후보(evidence)만 노출한다. 검색이 무관 항목까지
+	// top-K 로 채워 내보내던 문제를 막는다. 위험 표현이 없으면(highlights 0개) 모두 비운다.
+	if len(highlights) == 0 {
+		topics, issues, slang, trends = nil, nil, nil, nil
+	} else {
+		topics = selectByEvidence(topics, "T", evidence)
+		issues = selectByEvidence(issues, "I", evidence)
+		slang = selectByEvidence(slang, "S", evidence)
+		trends = selectByEvidence(trends, "M", evidence)
+	}
 	// rewrite.before 는 항상 원문. after 가 비면(LLM 누락/안전 판정) 원문으로 폴백해
 	// UI Before→After 가 빈 문자열로 교체를 제안하지 않도록 한다.
 	rewrite.Before = input
@@ -235,6 +245,7 @@ const judgeSystem = `너는 한국 시장의 '광고 카피' 위험도 검수자
   "score": 0~100 정수(위험도. 0=완전 안전, 100=매우 위험),
   "reasons": [string],
   "advice": string,
+  "evidence_ids": ["이번 판정에 실제 근거로 삼은 후보의 ID만(예: T1, I2). 표면만 겹쳐 버린 후보·근거로 안 쓴 것은 넣지 마라. 없으면 빈 배열"],
   "highlights": [
     {
       "phrase": "문구에서 그대로 발췌한 위험 표현(원문 부분 문자열과 정확히 일치)",
@@ -255,19 +266,20 @@ const judgeSystem = `너는 한국 시장의 '광고 카피' 위험도 검수자
 - 주의 (severity=needs_review, score 34~66): (B), 또는 (A)의 암시·간접.
 - 안전 (highlight 없음 또는 low, score 0~33): 민감 대상과 실질적 연결이 없다.
 
-[표시 게이트 — 모든 highlight의 단일 기준]
-표현을 표시하기 전 자문하라: "이 표현이 가리키는 '구체적' 민감 대상(특정 사건·날짜·집단·피해)을 한 문장으로 댈 수 있는가?"
-- 못 대면 표시하지 마라. 단어가 우연히 부정적·자극적 어감을 띠거나(단순 단어 매칭), 검색 결과와 표면만 겹치는 것은 근거가 아니다. basis 에 막연한 범주('민감 주제')밖에 못 적겠으면 표시하면 안 된다.
-- 댈 수 있으면 표시하고 basis 에 그 구체명(실제 사건·전례·집단)을 적는다.
-- '단어가 스치는 것'과 '그 대상을 실제로 지칭·묘사·전제·조장하는 것'을 구분하라. 개인을 향한 농담·놀림이라도 집단 고정관념에 기대어 성립하면 표시한다(개인 조롱이라는 이유로 면죄 금지).
-- 경제적 고통을 가볍게 빗댄 표현(주식·영끌·텅장·빚·취준 등)은 '경제적 박탈감'이라는 구체 대상이 있으므로 needs_review 로 표시한다(위험은 아님).
-- 관용적 과장, 일상어, 개인사, 순수 제품·판촉 표현은 그 자체로 구체적 민감 대상이 없으므로 표시하지 않는다 — 실재 사건·집단과 직접 결부될 때만 예외. 광고 카피 대부분은 표시할 게 없는 것이 정상이다.
+[표시 게이트 — recall 우선: 민감하면 일단 표시한다]
+표현을 두고 자문하라: "상당수 대중이 이 표현을 불쾌·부적절하게 느낄 만한, 실재하는 사회적 고통·약자·집단을 건드리는가?"
+- 그렇게 느껴지면 숨기지 말고 표시하라. 확신이 100%가 아니어도 '민감할 소지'가 감지되면 표시하는 쪽을 택한다(놓치는 것보다 표시가 낫다). basis 에 그 구체 대상(실제 사건·집단·피해)을 한 문장으로 적되, 구체명을 못 대겠으면 적어도 reason 에 '왜 민감한가'를 분명히 남긴다.
+- severity 의 기본값은 needs_review 다. (B) 대중 정서 민감성은 전부 needs_review 로 표시한다. high 는 (A) 실재 비극·참사·차별·인권침해를 '직접' 지칭할 때만 부여하고, 애매하면 절대 high 로 올리지 말고 needs_review 에 둔다.
+- 다만 다음 명백한 false positive 는 표시하지 않는다: (1) 단어가 우연히 부정적·자극적 어감만 띨 뿐 실제 민감 대상을 지칭·전제하지 않는 단순 단어 매칭, (2) 관용적 과장·일상어·개인사·순수 제품/판촉 표현, (3) 대상을 깎아내리지 않는 위트·도발·자신감·능청 톤. 이 셋은 '민감 소지'가 아니라 표면적 겹침이다.
+- 경제적 고통(주식·영끌·텅장·빚·취준 등), 질병·죽음·사고, 약자·소수자 비하, 집단 고정관념(성역할·세대·지역 등)을 가볍게 건드리면 needs_review 로 표시한다(위험 아님).
+- 개인을 향한 농담·놀림이라도 집단 고정관념에 기대어 성립하면 표시한다(개인 조롱이라는 이유로 면죄 금지).
 
 [숫자·날짜 특칙]
 가격·수량·할인·용량으로 자연스러운 숫자는 안전. 단, 숫자를 '월·일'로 분해해 한국의 민감한 역사적 날짜가 되는지 확인하라(예: 625→6·25, 815→8·15, 0416→4·16) — 백분율·가격·수량으로 위장돼 있어도 그 날짜가 사건과 함께 읽히면 최소 needs_review. 민감 날짜(망라 아님): 3·1, 4·3(제주), 4·16(세월호), 5·18(광주), 6·10, 6·25(한국전쟁), 8·15(광복), 10·29(이태원), 12·12, 9·11. 단 100·200·365·24 등 통상 수치나 일반 가격·수량은 날짜로 몰지 않는다.
 
 [검색 결과(RAG) 사용법]
-제공된 관련 주제·전례·신조어·밈은 '근거 후보'일 뿐 위험의 증거가 아니다. 후보마다 '입력이 그 대상을 실제로 지칭하는가'를 판정해, 표면만 겹치거나 유사도가 낮으면 버린다 — 대부분 '연관 없음'이 정상이다. 검색이 비어도 (B)는 위 기준으로 스스로 판단한다.
+제공된 관련 주제·전례·신조어·밈은 '근거 후보'일 뿐 위험의 증거가 아니다. 각 후보 앞 [T1]·[I2] 같은 ID 가 핸들이다. 후보마다 '입력이 그 대상을 실제로 지칭하는가'를 판정해, 표면만 겹치거나 유사도가 낮으면 버린다 — 대부분 '연관 없음'이 정상이다. 검색이 비어도 (B)는 위 게이트 기준으로 적극 표시한다.
+- evidence_ids 에는 '실제로 근거로 채택한' 후보의 핸들만 담는다. 판정·하이라이트의 basis 로 쓰지 않은 후보는 절대 넣지 마라(이 목록이 그대로 사용자에게 '관련 근거'로 노출된다). 채택한 게 없으면 빈 배열로 둔다.
 
 [phrase·출력 규칙]
 - phrase 는 입력에 등장하는 그대로의 부분 문자열(공백·기호 포함). 같은 표현이 여러 번 나오면 각각 표시.
@@ -276,10 +288,11 @@ const judgeSystem = `너는 한국 시장의 '광고 카피' 위험도 검수자
 
 // judgeOutput 은 판정 LLM의 원시 JSON 응답 스키마입니다.
 type judgeOutput struct {
-	Score      int      `json:"score"`
-	Reasons    []string `json:"reasons"`
-	Advice     string   `json:"advice"`
-	Highlights []struct {
+	Score       int      `json:"score"`
+	Reasons     []string `json:"reasons"`
+	Advice      string   `json:"advice"`
+	EvidenceIDs []string `json:"evidence_ids"` // 실제 근거로 채택한 후보 핸들(T1, I2 …)
+	Highlights  []struct {
 		Phrase     string  `json:"phrase"`
 		Severity   string  `json:"severity"`
 		Tag        string  `json:"tag"`
@@ -295,39 +308,49 @@ type judgeOutput struct {
 	} `json:"rewrite"`
 }
 
-func (s *Service) judge(ctx context.Context, input string, topics []Topic, issues, slang, trends []RelatedItem) (Verdict, []Highlight, Rewrite, error) {
+func (s *Service) judge(ctx context.Context, input string, topics []Topic, issues, slang, trends []RelatedItem) (Verdict, []Highlight, Rewrite, map[string]bool, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## 검수 대상 광고 문구\n%s\n\n", input)
 
+	// 후보마다 핸들(T#/I#/S#/M#)을 붙여 LLM 이 evidence_ids 로 실제 채택분만 지목하게 한다.
+	// 핸들은 슬라이스 순서로 결정론적이라(evidenceHandle), 후처리에서 같은 규칙으로 역매핑한다.
 	b.WriteString("## 관련 민감 주제 (융합 검색 결과)\n")
 	if len(topics) == 0 {
 		b.WriteString("(없음)\n")
 	}
-	for _, t := range topics {
-		fmt.Fprintf(&b, "- [%s, 유사도 %.3f] %s: %s\n", t.Category, t.Similarity, t.Title, t.Description)
+	for i, t := range topics {
+		fmt.Fprintf(&b, "- [%s] [%s, 유사도 %.3f] %s: %s\n", evidenceHandle("T", i), t.Category, t.Similarity, t.Title, t.Description)
 	}
 
 	// issues/slang/trends 는 RelatedItem 공통 형태라 한 헬퍼로 출력한다.
-	writeItems := func(header, empty string, items []RelatedItem) {
+	writeItems := func(header, empty, prefix string, items []RelatedItem) {
 		fmt.Fprintf(&b, "\n## %s\n", header)
 		if len(items) == 0 {
 			b.WriteString(empty + "\n")
 		}
-		for _, it := range items {
-			fmt.Fprintf(&b, "- [유사도 %.3f] %s: %s\n", it.Similarity, it.Title, it.Snippet)
+		for i, it := range items {
+			fmt.Fprintf(&b, "- [%s] [유사도 %.3f] %s: %s\n", evidenceHandle(prefix, i), it.Similarity, it.Title, it.Snippet)
 		}
 	}
-	writeItems("실제 논란 전례 (유사 사례)", "(유사 전례 없음)", issues)
-	writeItems("관련 신조어/은어", "(관련 신조어 없음)", slang)
-	writeItems("관련 유행어/밈", "(관련 유행어 없음)", trends)
+	writeItems("실제 논란 전례 (유사 사례)", "(유사 전례 없음)", "I", issues)
+	writeItems("관련 신조어/은어", "(관련 신조어 없음)", "S", slang)
+	writeItems("관련 유행어/밈", "(관련 유행어 없음)", "M", trends)
 
 	raw, err := s.ai.Judge(ctx, judgeSystem, b.String())
 	if err != nil {
-		return Verdict{}, nil, Rewrite{}, err
+		return Verdict{}, nil, Rewrite{}, nil, err
 	}
 	var o judgeOutput
 	if err := json.Unmarshal([]byte(raw), &o); err != nil {
-		return Verdict{}, nil, Rewrite{}, fmt.Errorf("판정 JSON 파싱 실패: %w (원문: %s)", err, raw)
+		return Verdict{}, nil, Rewrite{}, nil, fmt.Errorf("판정 JSON 파싱 실패: %w (원문: %s)", err, raw)
+	}
+
+	// LLM 이 채택했다고 지목한 핸들 집합(대문자·공백 정규화).
+	evidence := make(map[string]bool, len(o.EvidenceIDs))
+	for _, id := range o.EvidenceIDs {
+		if h := strings.ToUpper(strings.TrimSpace(id)); h != "" {
+			evidence[h] = true
+		}
 	}
 
 	verdict := Verdict{Score: o.Score, Reasons: o.Reasons, Advice: o.Advice}
@@ -346,5 +369,5 @@ func (s *Service) judge(ctx context.Context, input string, topics []Topic, issue
 		})
 	}
 	rewrite := Rewrite{After: o.Rewrite.After}
-	return verdict, highlights, rewrite, nil
+	return verdict, highlights, rewrite, evidence, nil
 }

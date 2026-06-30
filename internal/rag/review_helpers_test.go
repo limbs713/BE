@@ -50,6 +50,23 @@ func TestSafetyLabel(t *testing.T) {
 	}
 }
 
+func TestSelectByEvidence(t *testing.T) {
+	items := []string{"a", "b", "c"}
+	// 핸들은 prefix + (인덱스+1): a=T1, b=T2, c=T3. 채택한 것만 순서대로 남는다.
+	got := selectByEvidence(items, "T", map[string]bool{"T1": true, "T3": true})
+	if len(got) != 2 || got[0] != "a" || got[1] != "c" {
+		t.Errorf("채택분만 남지 않음: %v", got)
+	}
+	// 채택 없음 → 빈 슬라이스(무관 후보 전부 제거).
+	if got := selectByEvidence(items, "T", map[string]bool{}); len(got) != 0 {
+		t.Errorf("빈 채택인데 남음: %v", got)
+	}
+	// prefix 가 다르면(I) T 핸들과 매칭되지 않는다.
+	if got := selectByEvidence(items, "I", map[string]bool{"T1": true}); len(got) != 0 {
+		t.Errorf("prefix 교차 매칭됨: %v", got)
+	}
+}
+
 func TestStatusLabel(t *testing.T) {
 	cases := []struct {
 		score int

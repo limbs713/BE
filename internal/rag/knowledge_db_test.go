@@ -118,13 +118,13 @@ func TestKnowledgeStatus_PerTable(t *testing.T) {
 func TestTrends_DelegatesToStore(t *testing.T) {
 	mock, _ := pgxmock.NewPool()
 	defer mock.Close()
-	mock.ExpectQuery("FROM sensitive_events").
+	mock.ExpectQuery("FROM mim_terms").
 		WithArgs(12).
-		WillReturnRows(pgxmock.NewRows([]string{"expr", "category", "up"}).AddRow("광복절", "HISTORY", 5))
+		WillReturnRows(pgxmock.NewRows([]string{"word", "definition", "trend_score", "search_ratios_90d"}).AddRow("중꺾마", "중간에 꺾여도 그냥 한다", 9.9, []int32{50, 50}))
 
 	s := &Service{pool: mock, store: &store{pool: mock}}
 	got, err := s.Trends(context.Background(), 12)
-	if err != nil || len(got) != 1 || got[0].Tag != "#광복절" {
+	if err != nil || len(got) != 1 || got[0].Tag != "#중꺾마" {
 		t.Fatalf("Trends: %v %v", got, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
